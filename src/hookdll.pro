@@ -33,13 +33,13 @@ HEADERS += \
     disasm.h \
     apihook.h
 
-INCLUDEPATH += ../shared ../../../bsatk "$(BOOSTPATH)"
+INCLUDEPATH += ../shared ../bsatk "$(BOOSTPATH)"
 
 CONFIG(debug, debug|release) {
-		LIBS += -L$$OUT_PWD/../shared/debug -L../../../bsatk-build/debug
+		LIBS += -L$$OUT_PWD/../shared/debug -L$$OUT_PWD/../bsatk/debug
     DEFINES += DEBUG
 } else {
-		LIBS += -L$$OUT_PWD/../shared/release -L../../../bsatk-build/release
+		LIBS += -L$$OUT_PWD/../shared/release -L$$OUT_PWD/../bsatk/release
 }
 
 DEFINES += UNICODE _UNICODE
