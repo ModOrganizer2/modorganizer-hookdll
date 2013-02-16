@@ -170,6 +170,12 @@ extern CopyFileA_type CopyFileA_reroute;
 typedef BOOL (WINAPI *CopyFileW_type)(LPCWSTR, LPCWSTR, BOOL);
 extern CopyFileW_type CopyFileW_reroute;
 
+typedef BOOL (WINAPI *CreateHardLinkW_type)(LPCWSTR, LPCWSTR, LPSECURITY_ATTRIBUTES);
+extern CreateHardLinkW_type CreateHardLinkW_reroute;
+
+typedef BOOL (WINAPI *CreateHardLinkA_type)(LPCSTR, LPCSTR, LPSECURITY_ATTRIBUTES);
+extern CreateHardLinkA_type CreateHardLinkA_reroute;
+
 typedef DWORD (WINAPI *GetFullPathNameW_type)(LPCWSTR, DWORD, LPWSTR, LPWSTR*);
 extern GetFullPathNameW_type GetFullPathNameW_reroute;
 

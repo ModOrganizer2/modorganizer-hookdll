@@ -38,6 +38,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include "modinfo.h"
 #include "reroutes.h"
 #include "inject.h"
+#include "profile.h"
 #include <gameinfo.h>
 #include <util.h>
 #include <appconfig.h>
@@ -92,6 +93,8 @@ GetCurrentDirectoryW_type GetCurrentDirectoryW_reroute = GetCurrentDirectoryW;
 SetCurrentDirectoryW_type SetCurrentDirectoryW_reroute = SetCurrentDirectoryW;
 CopyFileA_type CopyFileA_reroute = CopyFileA;
 CopyFileW_type CopyFileW_reroute = CopyFileW;
+CreateHardLinkW_type CreateHardLinkW_reroute = CreateHardLinkW;
+CreateHardLinkA_type CreateHardLinkA_reroute = CreateHardLinkA;
 GetFullPathNameW_type GetFullPathNameW_reroute = GetFullPathNameW;
 
 ModInfo *modInfo = NULL;
@@ -157,102 +160,6 @@ struct {
 } s_Paths;
 
 
-class TProfile {
-public:
-  TProfile(const char *functionName)
-    : m_FunctionName(functionName)
-  {
-    m_Valid = QueryPerformanceCounter(&m_Start);
-  }
-
-  ~TProfile() {
-    if (m_Valid) {
-      LARGE_INTEGER end;
-      if (!QueryPerformanceCounter(&end)) {
-        return;
-      }
-      LONGLONG diff = end.QuadPart - m_Start.QuadPart;
-
-      LARGE_INTEGER frequency;
-      if (!QueryPerformanceFrequency(&frequency)) {
-        return;
-      }
-
-      registerTime(m_FunctionName, double(diff) / double(frequency.QuadPart));
-    }
-  }
-
-  static void displayProfile()
-  {
-    if (s_Times.size() != 0) {
-      double total = 0.0;
-      for (std::map<const char*, Time>::const_iterator iter = s_Times.begin(); iter != s_Times.end(); ++iter) {
-        Logger::Instance().info("%s: %lu calls, %d to %d us (total: %d us, avg: %d us)",
-                                iter->first,
-                                iter->second.m_Count,
-                                static_cast<int>(iter->second.m_Min * 1000000),
-                                static_cast<int>(iter->second.m_Max * 1000000),
-                                static_cast<int>(iter->second.m_Sum * 1000000),
-                                static_cast<int>((iter->second.m_Sum / static_cast<double>(iter->second.m_Count)) * 1000000));
-        total += iter->second.m_Sum;
-      }
-      Logger::Instance().info("Total: %d ms", static_cast<int>(total * 1000));
-      s_Times.clear();
-    }
-  }
-
-private:
-  struct Time {
-    Time() : m_Min(DBL_MAX), m_Sum(0.0), m_Max(0.0), m_Count(0) {}
-
-    double m_Min;
-    double m_Sum;
-    double m_Max;
-    unsigned long m_Count;
-  };
-private:
-  static void registerTime(const char *functionName, double timeMS) {
-    std::pair<std::map<const char*, Time>::iterator, bool> iter = s_Times.insert(std::make_pair(functionName, Time()));
-    std::map<const char*, Time>::iterator timeIter = iter.first;
-
-    if (timeMS < timeIter->second.m_Min) {
-      timeIter->second.m_Min = timeMS;
-    }
-    if (timeMS > timeIter->second.m_Max) {
-      timeIter->second.m_Max = timeMS;
-    }
-    timeIter->second.m_Sum += timeMS;
-    ++timeIter->second.m_Count;
-    time_t now = time(NULL);
-    if (now - s_LastDisplay > 60) {
-      displayProfile();
-      s_LastDisplay = now;
-    }
-  }
-
-private:
-
-
-  static std::map<const char*, Time> s_Times;
-  static time_t s_LastDisplay;
-
-  LARGE_INTEGER m_Start;
-  const char *m_FunctionName;
-  BOOL m_Valid;
-};
-
-
-std::map<const char*, TProfile::Time> TProfile::s_Times;
-time_t TProfile::s_LastDisplay = time(NULL);
-
-
-//#define PROFILE() TProfile __FUNCTION__ ## prof(__FUNCSIG__);
-//#define PROFILEN(name) TProfile name ## prof(#name);
-//#define PROFILE() LOGDEBUG("%s", __FUNCSIG__)
-#define PROFILE()
-#define PROFILEN(name)
-
-
 BOOL CreateDirectoryRecursive(LPCWSTR lpPathName, LPSECURITY_ATTRIBUTES lpSecurityAttributes)
 {
   WCHAR buffer[MAX_PATH + 1];
@@ -290,8 +197,10 @@ BOOL WINAPI CreateProcessA_rep(LPCSTR lpApplicationName,
   BOOL susp = dwCreationFlags & CREATE_SUSPENDED;
   DWORD flags = dwCreationFlags | CREATE_SUSPENDED;
 
-  LOGDEBUG("create process (a) %s", lpApplicationName != NULL ? lpApplicationName : "null");
-
+  LOGDEBUG("create process (a) %s - %s (in %s)",
+           lpApplicationName != NULL ? lpApplicationName : "null",
+           lpCommandLine != NULL ? lpCommandLine : "null",
+           lpCurrentDirectory != NULL ? lpCurrentDirectory : "null");
   bool compiler = false;
 
   if ((lpApplicationName == NULL) && (lpCommandLine != NULL)) {
@@ -321,9 +230,15 @@ BOOL WINAPI CreateProcessA_rep(LPCSTR lpApplicationName,
   }
 
   if (!compiler) {
+    std::string reroutedCwd;
+    if (lpCurrentDirectory != NULL) {
+      reroutedCwd = modInfo->getRerouteOpenExisting(lpCurrentDirectory);
+    }
+
     if (!::CreateProcessA_reroute(lpApplicationName, lpCommandLine, lpProcessAttributes,
           lpThreadAttributes, bInheritHandles, flags, lpEnvironment,
-          lpCurrentDirectory, lpStartupInfo, lpProcessInformation)) {
+          reroutedCwd.length() != 0 ? reroutedCwd.c_str() : lpCurrentDirectory,
+          lpStartupInfo, lpProcessInformation)) {
       return FALSE;
     }
   }
@@ -359,7 +274,11 @@ BOOL WINAPI CreateProcessW_rep(LPCWSTR lpApplicationName,
                  LPPROCESS_INFORMATION lpProcessInformation)
 {
   PROFILE();
-  LOGDEBUG("create process (w) %ls", lpApplicationName != NULL ? lpApplicationName : L"null");
+
+  LOGDEBUG("create process (w) %ls - %ls (in %ls)",
+           lpApplicationName != NULL ? lpApplicationName : L"null",
+           lpCommandLine != NULL ? lpCommandLine : L"null",
+           lpCurrentDirectory != NULL ? lpCurrentDirectory : L"null");
 
   BOOL susp = dwCreationFlags & CREATE_SUSPENDED;
   DWORD flags = dwCreationFlags | CREATE_SUSPENDED;
@@ -370,9 +289,16 @@ BOOL WINAPI CreateProcessW_rep(LPCWSTR lpApplicationName,
     lpApplicationName = reroutedApplicationName.c_str();
   }
 
+  std::wstring reroutedCwd;
+  if (lpCurrentDirectory != NULL) {
+    reroutedCwd = modInfo->getRerouteOpenExisting(lpCurrentDirectory);
+  }
+
   if (!::CreateProcessW_reroute(lpApplicationName, lpCommandLine, lpProcessAttributes,
         lpThreadAttributes, bInheritHandles, flags, lpEnvironment,
-        lpCurrentDirectory, lpStartupInfo, lpProcessInformation)) {
+        reroutedCwd.length() != 0 ? reroutedCwd.c_str() : lpCurrentDirectory,
+        lpStartupInfo, lpProcessInformation)) {
+    LOGDEBUG("process failed to start (%lu)", ::GetLastError());
     return FALSE;
   }
 
@@ -1421,6 +1347,68 @@ BOOL WINAPI CopyFileA_rep(LPCSTR lpExistingFileName, LPCSTR lpNewFileName, BOOL 
 }
 
 
+BOOL WINAPI CreateHardLinkW_rep(LPCWSTR lpFileName, LPCWSTR lpExistingFileName,
+                                LPSECURITY_ATTRIBUTES lpSecurityAttributes)
+{
+  PROFILE();
+
+  WCHAR fullNewFileName[MAX_PATH];
+  modInfo->getFullPathName(lpFileName, fullNewFileName, MAX_PATH);
+
+  std::wstring rerouteNewFileName = fullNewFileName;
+
+  bool reroutedToOverwrite = false;
+  if (StartsWith(fullNewFileName, modInfo->getDataPathW().c_str())) {
+    std::wostringstream temp;
+    temp << GameInfo::instance().getOverwriteDir() << "\\" << (fullNewFileName + modInfo->getDataPathW().length());
+    rerouteNewFileName = temp.str();
+
+    std::wstring targetDirectory = rerouteNewFileName.substr(0, rerouteNewFileName.find_last_of(L"\\/"));
+    CreateDirectoryRecursive(targetDirectory.c_str(), NULL);
+    reroutedToOverwrite = true;
+  }
+
+  std::wstring rerouteExistingFileName =  modInfo->getRerouteOpenExisting(lpExistingFileName);
+
+  BOOL result = false;
+
+  int sourceID = ::PathGetDriveNumberW(rerouteExistingFileName.c_str());
+  int destID = ::PathGetDriveNumberW(rerouteNewFileName.c_str());
+
+  wchar_t fsName[10];
+  memset(fsName, '\0', 10 * sizeof(wchar_t));
+  if (destID != -1) {
+    wchar_t driveRoot[4];
+    _snwprintf(driveRoot, 4, L"%c:\\", 'A' + destID);
+    ::GetVolumeInformationW(driveRoot, NULL, 0, NULL, NULL, NULL, fsName, 10);
+  }
+
+  if ((sourceID == destID) && (sourceID != -1) && (wcsncmp(fsName, L"NTFS", 10) == 0)) {
+    LOGDEBUG("link file: %ls -> %ls", rerouteExistingFileName.c_str(), rerouteNewFileName.c_str());
+    ::CreateHardLinkW_reroute(rerouteNewFileName.c_str(), rerouteExistingFileName.c_str(), lpSecurityAttributes);
+  } else {
+    LOGDEBUG("copy file (link impossible): %ls -> %ls", rerouteExistingFileName.c_str(), rerouteNewFileName.c_str());
+    ::CopyFileW_reroute(rerouteExistingFileName.c_str(), rerouteNewFileName.c_str(), false);
+  }
+
+  if (reroutedToOverwrite) {
+    modInfo->addOverwriteFile(rerouteNewFileName);
+  }
+  return result;
+}
+
+
+BOOL WINAPI CreateHardLinkA_rep(LPCSTR lpFileName, LPCSTR lpExistingFileName,
+                                LPSECURITY_ATTRIBUTES lpSecurityAttributes)
+{
+  PROFILE();
+
+  LOGDEBUG("link file (a): %s -> %s", lpExistingFileName, lpFileName);
+
+  return CreateHardLinkW_rep(ToWString(lpFileName, false).c_str(), ToWString(lpExistingFileName, false).c_str(), lpSecurityAttributes);
+}
+
+
 DWORD WINAPI GetFullPathNameW_rep(LPCWSTR lpFileName, DWORD nBufferLength, LPWSTR lpBuffer, LPWSTR *lpFilePart)
 {
   PROFILE();
@@ -1517,6 +1505,8 @@ BOOL InitHooks()
     INITHOOK(TEXT("kernel32.dll"), OpenFile);
     INITHOOK(TEXT("kernel32.dll"), CopyFileA);
     INITHOOK(TEXT("kernel32.dll"), CopyFileW);
+    INITHOOK(TEXT("kernel32.dll"), CreateHardLinkA);
+    INITHOOK(TEXT("kernel32.dll"), CreateHardLinkW);
     INITHOOK(TEXT("kernel32.dll"), GetFullPathNameW);
 
     LOGDEBUG("all hooks installed");

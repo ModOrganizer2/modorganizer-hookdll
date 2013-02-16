@@ -24,7 +24,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include "logger.h"
 #include "reroutes.h"
 #include "utility.h"
-#include "utility.h"
+#include "profile.h"
 #include <gameinfo.h>
 #include <appconfig.h>
 #ifdef __GNUC__
@@ -777,6 +777,8 @@ void ModInfo::getFullPathName(LPCWSTR originalName, LPWSTR targetBuffer, int buf
 
 std::wstring ModInfo::getRerouteOpenExisting(LPCWSTR originalName, bool preferOriginal, bool *rerouted)
 {
+  PROFILE();
+
   if (rerouted != NULL) {
     *rerouted = false;
   }

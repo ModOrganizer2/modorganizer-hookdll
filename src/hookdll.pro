@@ -20,7 +20,8 @@ SOURCES += \
     dllmain.cpp \
     disasm_table.cpp \
     disasm.cpp \
-    apihook.cpp
+    apihook.cpp \
+    profile.cpp
 
 HEADERS += \
 		utility.h \
@@ -31,7 +32,8 @@ HEADERS += \
     dllmain.h \
     disasm_table.h \
     disasm.h \
-    apihook.h
+    apihook.h \
+    profile.h
 
 INCLUDEPATH += ../shared ../bsatk "$(BOOSTPATH)"
 
