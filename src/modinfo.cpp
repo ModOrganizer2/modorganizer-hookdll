@@ -39,6 +39,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include <algorithm>
 
 
+using namespace MOShared;
+
+
 extern WCHAR dataPathAbsoluteW[MAX_PATH];
 extern char dataPathAbsoluteA[MAX_PATH];
 

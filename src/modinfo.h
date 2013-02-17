@@ -92,7 +92,7 @@ public:
   // get the part of path that is valid within any of the mod directories
 //  std::wstring getValidPath(LPCWSTR path, size_t offset);
 
-  void dumpDirectoryStructure(const DirectoryEntry *directory, int indent);
+  void dumpDirectoryStructure(const MOShared::DirectoryEntry *directory, int indent);
 
   std::wstring getCurrentDirectory();
 
@@ -126,7 +126,7 @@ private:
 
   void loadDeleters(const std::string &fileName);
 
-  void createDirectoryStructure(DirectoryEntry &directoryEntry, const std::wstring &basePath, const std::wstring &dirName, int index);
+  void createDirectoryStructure(MOShared::DirectoryEntry &directoryEntry, const std::wstring &basePath, const std::wstring &dirName, int index);
 
   bool detectOverwriteChange();
 
@@ -161,7 +161,7 @@ private:
   std::vector<std::wstring> m_ModList;
   std::set<int> m_ModAccess;
   std::set<std::wstring> m_HiddenFiles;
-  DirectoryEntry m_DirectoryStructure;
+  MOShared::DirectoryEntry m_DirectoryStructure;
   int m_ModCount;
 
   std::list<RemovalInfo> m_RemovalInfo;

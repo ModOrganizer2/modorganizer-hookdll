@@ -46,6 +46,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include <boost/scoped_array.hpp>
 
 
+using namespace MOShared;
+
+
 // hook declarations
 CreateProcessA_type CreateProcessA_reroute = CreateProcessA;
 CreateProcessW_type CreateProcessW_reroute = CreateProcessW;
