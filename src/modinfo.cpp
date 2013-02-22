@@ -25,6 +25,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include "reroutes.h"
 #include "utility.h"
 #include "profile.h"
+#include "hooklock.h"
 #include <gameinfo.h>
 #include <appconfig.h>
 #ifdef __GNUC__
@@ -238,6 +239,7 @@ bool ModInfo::detectOverwriteChange()
       try {
         FilesOrigin &origin = m_DirectoryStructure.getOriginByName(L"overwrite");
         origin.enable(false);
+        HookLock lock; // addFromOrigin uses FindFirstFileEx, rerouting that could be disastrous
         m_DirectoryStructure.addFromOrigin(L"overwrite", GameInfo::instance().getOverwriteDir(), origin.getPriority());
         return true;
       } catch (const std::exception &e) {
@@ -254,11 +256,23 @@ bool ModInfo::setCwd(const std::wstring &currentDirectory)
   wchar_t temp[MAX_PATH];
   Canonicalize(temp, currentDirectory.c_str());
   std::wstring modsDir = GameInfo::instance().getModsDir();
+  std::wstring overwriteDir = GameInfo::instance().getOverwriteDir();
   m_CurrentDirectory.clear();
   if (StartsWith(temp, modsDir.c_str())) {
     wchar_t *relCwd = temp + modsDir.length() + 1;
+    // skip the mod name
     relCwd = wcschr(relCwd, L'\\');
 
+    if (relCwd != NULL) {
+      Canonicalize(temp, GameInfo::instance().getGameDirectory().append(L"\\data\\").append(relCwd).c_str());
+      m_CurrentDirectory.assign(temp);
+    } else {
+      m_CurrentDirectory = m_DataPathAbsoluteW;
+    }
+
+    return true;
+  } else if (StartsWith(temp, overwriteDir.c_str())) {
+    wchar_t *relCwd = temp + overwriteDir.length() + 1;
     if (relCwd != NULL) {
       Canonicalize(temp, GameInfo::instance().getGameDirectory().append(L"\\data\\").append(relCwd).c_str());
       m_CurrentDirectory.assign(temp);
@@ -768,7 +782,7 @@ void ModInfo::getFullPathName(LPCWSTR originalName, LPWSTR targetBuffer, int buf
     if (StartsWith(originalName, cwd)) {
       _snwprintf(temp, bufferLength, L"%ls\\%ls", m_CurrentDirectory.c_str(), originalName + length);
     } else {
-      PathCombineW(temp, m_CurrentDirectory.c_str(), originalName);
+      ::PathCombineW(temp, m_CurrentDirectory.c_str(), originalName);
     }
   } else {
     ::GetFullPathNameW_reroute(originalName, bufferLength, temp, NULL);

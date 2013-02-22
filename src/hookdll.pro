@@ -21,7 +21,8 @@ SOURCES += \
     disasm_table.cpp \
     disasm.cpp \
     apihook.cpp \
-    profile.cpp
+    profile.cpp \
+    hooklock.cpp
 
 HEADERS += \
 		utility.h \
@@ -33,13 +34,15 @@ HEADERS += \
     disasm_table.h \
     disasm.h \
     apihook.h \
-    profile.h
+    profile.h \
+    hooklock.h
 
 INCLUDEPATH += ../shared ../bsatk "$(BOOSTPATH)"
 
 CONFIG(debug, debug|release) {
-		LIBS += -L$$OUT_PWD/../shared/debug -L$$OUT_PWD/../bsatk/debug
-    DEFINES += DEBUG
+  LIBS += -L$$OUT_PWD/../shared/debug -L$$OUT_PWD/../bsatk/debug
+  LIBS += -lDbgHelp
+  DEFINES += DEBUG
 } else {
 		LIBS += -L$$OUT_PWD/../shared/release -L$$OUT_PWD/../bsatk/release
 }

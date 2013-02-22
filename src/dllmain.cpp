@@ -39,6 +39,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include "reroutes.h"
 #include "inject.h"
 #include "profile.h"
+#include "hooklock.h"
 #include <gameinfo.h>
 #include <util.h>
 #include <appconfig.h>
@@ -119,18 +120,6 @@ HANDLE instanceMutex = INVALID_HANDLE_VALUE;
 HMODULE dllModule = NULL;
 
 int sLogLevel = 0;
-
-
-bool recursionProtection = false; // part of a workaround to prevent recursive function calls, usually for performance optimisation
-
-class RecursionLock {
-public:
-  RecursionLock() : m_Owner(recursionProtection == false) { recursionProtection = true; }
-  ~RecursionLock() { if (m_Owner) recursionProtection = false; }
-private:
-  bool m_Owner;
-};
-
 
 
 #pragma message("the privatestring-hook is not functional with a debug build. should fix that")
@@ -499,6 +488,7 @@ BOOL WINAPI GetFileAttributesExW_rep(LPCWSTR lpFileName, GET_FILEEX_INFO_LEVELS 
   } else {
     rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName, false, &rerouted);
   }
+
   BOOL result = GetFileAttributesExW_reroute(rerouteFilename.c_str(), fInfoLevelId, lpFileInformation);
   if (rerouted) {
     if (result && (fInfoLevelId == GetFileExInfoStandard)) {
@@ -530,6 +520,9 @@ HANDLE WINAPI FindFirstFileExW_rep(LPCWSTR lpFileName,
                                    DWORD dwAdditionalFlags)
 {
   PROFILE();
+
+  if (HookLock::isLocked()) return FindFirstFileExW_reroute(lpFileName, fInfoLevelId, lpFindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags);
+
   LPCWSTR baseName = GetBaseName(lpFileName);
   int pathLen = baseName - lpFileName;
 
@@ -569,6 +562,7 @@ BOOL GetNext(HANDLE hFindFile, LPWIN32_FIND_DATAW lpFindFileData)
 BOOL WINAPI FindNextFileW_rep(HANDLE hFindFile, LPWIN32_FIND_DATAW lpFindFileData)
 {
   PROFILE();
+
   BOOL result = GetNext(hFindFile, lpFindFileData);
   while (result && ((wcscmp(lpFindFileData->cFileName, s_Paths.modsDirW.c_str()) == 0) ||
                     (wcscmp(lpFindFileData->cFileName, L"profiles") == 0))) {
@@ -855,7 +849,7 @@ DWORD WINAPI GetPrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LP
 {
   PROFILE();
 
-  if (recursionProtection ||
+  if (HookLock::isLocked() ||
       lpFileName == NULL) {
     return GetPrivateProfileStringA_reroute(lpAppName, lpKeyName, lpDefault, lpReturnedString, nSize, lpFileName);
   }
@@ -937,7 +931,10 @@ DWORD WINAPI GetPrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LP
         default: {
           // cancel by calling this function again. Since the hook-state has been set to failed, this will not cause
           // an endless loop
-          Logger::Instance().error("failed to determine ini-style (opcode 0x%x)", disasm.GetOpcode());
+
+          wchar_t filename[MAX_PATH];
+          ::GetModuleFileNameW(NULL, filename, MAX_PATH);
+          Logger::Instance().error("failed to determine ini-style (opcode 0x%x) (binary: %ls)", disasm.GetOpcode(), fileName);
           return GetPrivateProfileStringA_rep(lpAppName, lpKeyName, lpDefault, lpReturnedString, nSize, lpFileName);
         } break;
       }
@@ -1046,7 +1043,7 @@ DWORD WINAPI GetPrivateProfileStringW_rep(LPCWSTR lpAppName, LPCWSTR lpKeyName, 
 {
   PROFILE();
 
-  if (recursionProtection) return GetPrivateProfileStringW_reroute(lpAppName, lpKeyName, lpDefault, lpReturnedString, nSize, lpFileName);
+  if (HookLock::isLocked()) return GetPrivateProfileStringW_reroute(lpAppName, lpKeyName, lpDefault, lpReturnedString, nSize, lpFileName);
 
   if (lpFileName != NULL) {
     DWORD res = GetPrivateProfileStringW_reroute(lpAppName, lpKeyName, L"DUMMY_VALUE", lpReturnedString, nSize, modInfo->getTweakedIniW().c_str());
@@ -1142,7 +1139,7 @@ UINT WINAPI GetPrivateProfileIntA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, INT nD
 {
   PROFILE();
 
-  RecursionLock lock;
+  HookLock lock;
 
   if (lpFileName != NULL) {
     UINT res = GetPrivateProfileIntA_reroute(lpAppName, lpKeyName, INT_MAX, modInfo->getTweakedIniA().c_str());
@@ -1162,7 +1159,7 @@ UINT WINAPI GetPrivateProfileIntW_rep(LPCWSTR lpAppName, LPCWSTR lpKeyName, INT 
 {
   PROFILE();
 
-  RecursionLock lock; // on some (all?) systems, getprivateprofileint calls getprivateprofilestring
+  HookLock lock; // on some (all?) systems, getprivateprofileint calls getprivateprofilestring
 
   if (lpFileName != NULL) {
     UINT res = GetPrivateProfileIntW_reroute(lpAppName, lpKeyName, INT_MAX, modInfo->getTweakedIniW().c_str());
@@ -1285,7 +1282,6 @@ BOOL WINAPI SetCurrentDirectoryW_rep(LPCWSTR lpPathName)
 {
   PROFILE();
 
-  LOGDEBUG("set current directory: %ls", lpPathName);
   std::wstring reroutedPath = modInfo->getRerouteOpenExisting(lpPathName, true);
   if (modInfo->setCwd(lpPathName)) {
     std::wstring cwdRerouted;
@@ -1294,12 +1290,14 @@ BOOL WINAPI SetCurrentDirectoryW_rep(LPCWSTR lpPathName)
     } else {
       cwdRerouted = modInfo->getRerouteOpenExisting(L".");
     }
+    LOGDEBUG("set current directory: %ls -> %ls", lpPathName, cwdRerouted.c_str());
     BOOL res = ::SetCurrentDirectoryW_reroute(cwdRerouted.c_str());
 
     WCHAR temp[MAX_PATH];
     ::GetCurrentDirectoryW_reroute(MAX_PATH, temp);
     return res;
   } else {
+    LOGDEBUG("set current directory: %ls -> %ls", lpPathName, reroutedPath.c_str());
     BOOL res = ::SetCurrentDirectoryW_reroute(reroutedPath.c_str());
 
     WCHAR temp[MAX_PATH];
@@ -1424,6 +1422,28 @@ DWORD WINAPI GetFullPathNameW_rep(LPCWSTR lpFileName, DWORD nBufferLength, LPWST
       DWORD count = std::min<DWORD>(nBufferLength - 1, wcslen(temp));
       wcsncpy(lpBuffer, temp, count);
       lpBuffer[count] = L'\0';
+      if (lpFilePart != NULL) {
+        *lpFilePart = GetBaseName(lpBuffer);
+        if (**lpFilePart == L'\0') {
+          // lpBuffer is a directory
+          *lpFilePart = NULL;
+        }
+      }
+      return count;
+    } else if (::PathIsRelativeW(lpFileName)) {
+      WCHAR temp[MAX_PATH];
+
+      ::PathCombineW(temp, modInfo->getCurrentDirectory().c_str(), lpFileName);
+      WCHAR temp2[MAX_PATH];
+      DWORD count = 0UL;
+      if (::PathCanonicalizeW(temp2, temp)) {
+        count = std::min<DWORD>(nBufferLength - 1, wcslen(temp2));
+        wcsncpy(lpBuffer, temp2, count);
+      } else {
+        Logger::Instance().error("failed to canonicalize path %ls", temp);
+        count = std::min<DWORD>(nBufferLength - 1, wcslen(temp));
+        wcsncpy(lpBuffer, temp, count);
+      }
       if (lpFilePart != NULL) {
         *lpFilePart = GetBaseName(lpBuffer);
         if (**lpFilePart == L'\0') {
@@ -1763,6 +1783,7 @@ BOOL Init(int logLevel, const wchar_t *profileName)
   {
     wchar_t cwd[MAX_PATH];
     ::GetCurrentDirectoryW(MAX_PATH, cwd);
+    Logger::Instance().info("working directory: %ls", cwd);
     modInfo->setCwd(cwd);
   }
 
