@@ -334,9 +334,18 @@ BYTE Disasm::GetOpcode() const throw()
 
 BOOL Disasm::TwoByteOp() const throw()
 {
-	return _cmd_info.twoByteOpcode;
+  return _cmd_info.twoByteOpcode;
 }
 
+BYTE Disasm::GetReg1() const
+{
+  return _cmd_info.modrm & 0x07;
+}
+
+BYTE Disasm::GetReg2() const
+{
+  return (_cmd_info.modrm & 0x38) >> 3;
+}
 
 size_t Disasm::GetSize() const throw()
 {

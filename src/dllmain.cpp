@@ -757,90 +757,226 @@ static PBYTE s_ReturnAddress = NULL;
 
 static char s_FunctionBuffer[200] = { 0 };
 
-/*__declspec(naked) void iniReplacement()
+
+__declspec(naked) void pushModEAX()
 {
   __asm {
-    push    s_BufferSize
-    lea		eax, s_Buffer
-    push	eax
-    push	ecx
-    lea     edx, [esp + 0x74]
-    push    edx
-    lea     eax, [esp + 0x38]
-    push    eax
-    call    ebp
-    lea		ecx, s_Buffer
-    jmp		[s_ReturnAddress]
+    push s_BufferSize
+    lea  eax, s_Buffer
+    push eax
+    ret
   };
-}*/
+}
 
-
-__declspec(naked) void iniReplacementEAX()
+__declspec(naked) void pushModEBX()
 {
   __asm {
-    push    s_BufferSize
-    lea		ecx, s_Buffer
-    push	ecx
-    push	eax
-    lea     eax, [esp + 0xBADF00D1]
-    push    eax
-    lea     eax, [esp + 0xBADF00D2]
-    push    eax
+    push s_BufferSize
+    lea  ebx, s_Buffer
+    push ebx
+    ret
+  };
+}
+
+__declspec(naked) void pushModECX()
+{
+  __asm {
+    push s_BufferSize
+    lea  ecx, s_Buffer
+    push ecx
+    ret
+  };
+}
+
+__declspec(naked) void pushModEDX()
+{
+  __asm {
+    push s_BufferSize
+    lea  edx, s_Buffer
+    push edx
+    ret
+  };
+}
+
+__declspec(naked) void callInstrMod()
+{
+  __asm {
     call    dword ptr[GetPrivateProfileStringA]
+    ret
+  };
+}
+
+__declspec(naked) void returnInstrEAX()
+{
+  __asm {
     lea		eax, s_Buffer
     jmp		[s_ReturnAddress]
   };
 }
-
-__declspec(naked) void iniReplacementEBX()
+__declspec(naked) void returnInstrEBX()
 {
   __asm {
-    push    s_BufferSize
-    lea		ecx, s_Buffer
-    push	ecx
-    push	ebx
-    lea     ebx, [esp + 0xBADF00D1]
-    push    ebx
-    lea     ebx, [esp + 0xBADF00D2]
-    push    ebx
-    call    dword ptr[GetPrivateProfileStringA]
     lea		ebx, s_Buffer
     jmp		[s_ReturnAddress]
   };
 }
-
-__declspec(naked) void iniReplacementECX()
+__declspec(naked) void returnInstrECX()
 {
   __asm {
-    push    s_BufferSize
-    lea		eax, s_Buffer
-    push	eax
-    push	ecx
-    lea     ecx, [esp + 0xBADF00D1]
-    push    ecx
-    lea     ecx, [esp + 0xBADF00D2]
-    push    ecx
-    call    dword ptr[GetPrivateProfileStringA]
     lea		ecx, s_Buffer
     jmp		[s_ReturnAddress]
   };
 }
-
-__declspec(naked) void iniReplacementEDX()
+__declspec(naked) void returnInstrEDX()
 {
   __asm {
-    push    s_BufferSize
-    lea		ecx, s_Buffer
-    push	ecx
-    push	edx
-    lea     edx, [esp + 0xBADF00D1]
-    push    edx
-    lea     edx, [esp + 0xBADF00D2]
-    push    edx
-    call    dword ptr[GetPrivateProfileStringA]
     lea		edx, s_Buffer
     jmp		[s_ReturnAddress]
   };
+}
+
+
+int getSnippetSize(void *function)
+{
+  // the function snippets all end in a "ret" we don't want to copy
+  FuncDisasm temp(reinterpret_cast<PBYTE>(function));
+  return temp.GetSize() - 1;
+}
+
+
+static bool identifyAndManipulate(DWORD *pos, DWORD size)
+{
+  memset(s_FunctionBuffer, 0x90, 200);
+
+  unsigned char *funcPtr = (unsigned char*)(*pos);
+
+  enum Registers {
+    REG_EAX,
+    REG_EBX,
+    REG_ECX,
+    REG_EDX
+  } resultRegister;
+
+  { // determine the register the result is expected in
+    s_ReturnAddress = (unsigned char*)(*pos);
+    Disasm temp(s_ReturnAddress);
+    bool found = false;
+    for (int i = 0; i < 3; ++i) { // don't go further than 3 instructions
+      if ((temp.GetOpcode() >= 0x50) && (temp.GetOpcode() <= 0x53)) {
+        // a push
+        switch (temp.GetOpcode()) {
+          case 0x50: resultRegister = REG_EAX; break;
+          case 0x51: resultRegister = REG_ECX; break;
+          case 0x52: resultRegister = REG_EDX; break;
+          case 0x53: resultRegister = REG_EBX; break;
+        }
+        found = true;
+        break;
+      }
+      s_ReturnAddress = temp.GetNextCommand();
+    }
+    if (!found) {
+      return false;
+    }
+  }
+
+  // the replace should start at the push that put nSize on the stack, so construct the assembler instruction
+  // that would do that and search backward for it
+  unsigned char pushInst[] = { 0x68, 0xBA, 0xAD, 0xF0, 0x0D }; // push
+  *(DWORD*)(pushInst + 1) = size;
+
+  bool found = false;
+
+  // if we don't find it for 75 bytes, we're definitively wrong!
+  for (int i = 0; i < 75; ++i) {
+    if (memcmp(pushInst, funcPtr, 5) == 0) {
+      found = true;
+      break;
+    }
+
+    --funcPtr;
+  }
+
+  if (!found) {
+    return false;
+  }
+
+  char *tPtr = s_FunctionBuffer;
+
+  Disasm disasm(funcPtr);
+  PBYTE sPtr = disasm.GetNextCommand();
+  if (disasm.GetOpcode() != 0x8D) return false;
+  void *function = NULL;
+  switch (disasm.GetReg2()) {
+    case 0: function = pushModEAX; break;
+    case 1: function = pushModECX; break;
+    case 2: function = pushModEDX; break;
+    case 3: function = pushModEBX; break;
+  }
+
+  int funcSize = getSnippetSize(function);
+  memcpy(tPtr, function, funcSize);
+  tPtr += funcSize;
+
+  disasm.GetNextCommand();
+  sPtr = disasm.GetNextCommand();
+
+  while ((disasm.GetOpcode() != 0xFF) && (sPtr < s_ReturnAddress)) {
+    int opsize = disasm.GetSize();
+    memcpy(tPtr, sPtr, opsize);
+    tPtr += opsize;
+
+    sPtr = disasm.GetNextCommand();
+  }
+
+  if (sPtr >= s_ReturnAddress) {
+    // call not found
+    return false;
+  }
+
+  { // copy call instruction to target function
+    int funcSize = getSnippetSize(callInstrMod);
+    memcpy(tPtr, callInstrMod, funcSize);
+    tPtr += funcSize;
+    sPtr = disasm.GetNextCommand();
+  }
+
+  // slightly hacky: copy the rest up to return adress or the lea
+  while ((sPtr < s_ReturnAddress) && (disasm.GetOpcode() != 0x8D)) {
+    int opSize = disasm.GetSize();
+    memcpy(tPtr, sPtr, opSize);
+    tPtr += opSize;
+    sPtr = disasm.GetNextCommand();
+  }
+
+  switch (resultRegister) {
+    case REG_EAX: memcpy(tPtr, returnInstrEAX, FuncDisasm(reinterpret_cast<PBYTE>(returnInstrEAX)).GetSize()); break;
+    case REG_EBX: memcpy(tPtr, returnInstrEBX, FuncDisasm(reinterpret_cast<PBYTE>(returnInstrEBX)).GetSize()); break;
+    case REG_ECX: memcpy(tPtr, returnInstrECX, FuncDisasm(reinterpret_cast<PBYTE>(returnInstrECX)).GetSize()); break;
+    case REG_EDX: memcpy(tPtr, returnInstrEDX, FuncDisasm(reinterpret_cast<PBYTE>(returnInstrEDX)).GetSize()); break;
+  }
+
+  // allow write access to the memory page of the function we want to change
+  DWORD oldProtection;
+  if (!::VirtualProtect(funcPtr, 256, PAGE_EXECUTE_READWRITE, &oldProtection)) {
+    Logger::Instance().error("failed to change protection");
+    return true;
+  }
+
+  // calculate distance between the code we want to circumvent and the replacement code...
+  ULONG distance = reinterpret_cast<ULONG>(s_FunctionBuffer) - 1 -
+                    (reinterpret_cast<ULONG>(funcPtr) + sizeof(ULONG));
+  // ... so we can do a relative jump there
+  *funcPtr = 0xE9;
+  *(reinterpret_cast<ULONG*>(funcPtr + 1)) = distance;
+  archiveListHookState = HOOK_SUCCESS;
+
+  // restore old page access rights
+  ::VirtualProtect(funcPtr, 256, oldProtection, &oldProtection);
+
+  Logger::Instance().info("archive list limit removed");
+
+  return true;
 }
 
 
@@ -848,7 +984,6 @@ DWORD WINAPI GetPrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LP
                                           LPSTR lpReturnedString, DWORD nSize, LPCSTR lpFileName)
 {
   PROFILE();
-
   if (HookLock::isLocked() ||
       lpFileName == NULL) {
     return GetPrivateProfileStringA_reroute(lpAppName, lpKeyName, lpDefault, lpReturnedString, nSize, lpFileName);
@@ -864,12 +999,13 @@ DWORD WINAPI GetPrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LP
     ++lastSlash;
   }
 
-  std::string fileName = ToLower(std::string(lastSlash));
-  if (iniFilesA.find(fileName) == iniFilesA.end()) {
-    std::string rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
-    return GetPrivateProfileStringA_reroute(lpAppName, lpKeyName, lpDefault, lpReturnedString, nSize, rerouteFilename.c_str());
+  {
+    std::string fileName = ToLower(std::string(lastSlash));
+    if (iniFilesA.find(fileName) == iniFilesA.end()) {
+      std::string rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
+      return GetPrivateProfileStringA_reroute(lpAppName, lpKeyName, lpDefault, lpReturnedString, nSize, rerouteFilename.c_str());
+    }
   }
-
 
   bool archiveList = (_stricmp(lpKeyName, "sResourceArchiveList") == 0) || (_stricmp(lpKeyName, "sArchiveList") == 0);
 
@@ -878,135 +1014,27 @@ DWORD WINAPI GetPrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LP
     archiveListHookState = HOOK_FAILED;
     DWORD start, end;
     GetSectionRange(&start, &end);
-
     // search up through the stack to find the first address that belongs to the code-segment of the game-binary.
     // that is the return address to the function that called GetPrivateProfileString
-    DWORD *pos = (DWORD*)lpAppName;
+    DWORD *pos = (DWORD*)&lpFileName;
     int steps = 100; // if this takes more than 100 steps, this was probably not called by the game binary at all
-    while (((*pos <= start) || (*pos >= end)) && (steps > 0)) {
-      --pos;
-      --steps;
+    while (steps > 0) {
+      while (((*pos <= start) || (*pos >= end)) && (steps > 0)) {
+        ++pos;
+        --steps;
+      }
+      // if we did find the function...
+      if (steps > 0) {
+        if (identifyAndManipulate(pos, nSize)) {
+          break;
+        } else {
+          ++pos;
+          --steps;
+        }
+      }
     }
-
-    // if we did find the function...
-    if (steps > 0) {
-      unsigned char *funcPtr = (unsigned char*)(*pos);
-
-      int iniReplacementSize = 0;
-
-      // skip one assembler instruction (the lea that puts the buffer address into a register)
-      Disasm disasm(funcPtr);
-      s_ReturnAddress = disasm.GetNextCommand();
-      enum Registers {
-        REG_EAX,
-        REG_EBX,
-        REG_ECX,
-        REG_EDX
-      } resultRegister;
-      switch (disasm.GetOpcode()) {
-        case 0x50: {
-          resultRegister = REG_EAX;
-          FuncDisasm temp(reinterpret_cast<PBYTE>(iniReplacementEAX));
-          iniReplacementSize = temp.GetSize();
-          memcpy(s_FunctionBuffer, iniReplacementEAX, iniReplacementSize);
-        } break;
-        case 0x51: {
-          resultRegister = REG_ECX;
-          FuncDisasm temp(reinterpret_cast<PBYTE>(iniReplacementECX));
-          iniReplacementSize = temp.GetSize();
-          memcpy(s_FunctionBuffer, iniReplacementECX, iniReplacementSize);
-        } break;
-        case 0x52: {
-          resultRegister = REG_EDX;
-          FuncDisasm temp(reinterpret_cast<PBYTE>(iniReplacementEDX));
-          iniReplacementSize = temp.GetSize();
-          memcpy(s_FunctionBuffer, iniReplacementEDX, iniReplacementSize);
-        } break;
-        case 0x53: {
-          resultRegister = REG_EBX;
-          FuncDisasm temp(reinterpret_cast<PBYTE>(iniReplacementEBX));
-          iniReplacementSize = temp.GetSize();
-          memcpy(s_FunctionBuffer, iniReplacementEBX, iniReplacementSize);
-        } break;
-        default: {
-          // cancel by calling this function again. Since the hook-state has been set to failed, this will not cause
-          // an endless loop
-
-          wchar_t filename[MAX_PATH];
-          ::GetModuleFileNameW(NULL, filename, MAX_PATH);
-          Logger::Instance().error("failed to determine ini-style (opcode 0x%x) (binary: %ls)", disasm.GetOpcode(), fileName);
-          return GetPrivateProfileStringA_rep(lpAppName, lpKeyName, lpDefault, lpReturnedString, nSize, lpFileName);
-        } break;
-      }
-
-      {
-        DWORD ignore;
-        if (!::VirtualProtect(s_FunctionBuffer, iniReplacementSize, PAGE_EXECUTE_READWRITE, &ignore)) {
-          Logger::Instance().error("failed to change protection on ini replacement");
-          // this will probably still work...
-        }
-      }
-
-
-      // the replace should start at the push that put nSize on the stack, so construct the assembler instruction
-      // that would do that and search backward for it
-      unsigned char pushInst[] = { 0x68, 0xBA, 0xAD, 0xF0, 0x0D }; // push
-      *(DWORD*)(pushInst + 1) = nSize;
-
-      DWORD espOffset1 = 0x00;
-      DWORD espOffset2 = 0x00;
-
-      bool found = false;
-      // if we don't find it for 200 bytes, we're definitively wrong!
-      for (int i = 0; (i < 200) && (archiveListHookState != HOOK_SUCCESS); ++i) {
-        if (memcmp(pushInst, funcPtr, 5) == 0) {
-          found = true;
-          // allow write access to the memory page of the function we want to change
-          DWORD oldProtection;
-          if (!::VirtualProtect(funcPtr, 256, PAGE_EXECUTE_READWRITE, &oldProtection)) {
-            Logger::Instance().error("failed to change protection");
-            break;
-          }
-
-          // calculate distance between the code we want to circumvent and the replacement code...
-          ULONG distance = reinterpret_cast<ULONG>(s_FunctionBuffer) - 1 -
-                            (reinterpret_cast<ULONG>(funcPtr) + sizeof(ULONG));
-          // ... so we can do a relative jump there
-          *funcPtr = 0xE9;
-          *(reinterpret_cast<ULONG*>(funcPtr + 1)) = distance;
-          archiveListHookState = HOOK_SUCCESS;
-
-          // restore old page access rights
-          ::VirtualProtect(funcPtr, 256, oldProtection, &oldProtection);
-        } else if (funcPtr[0] == 0x8D) { // lea
-          ULONG diff = *(reinterpret_cast<PBYTE>(funcPtr + 3));
-          Disasm temp(funcPtr);
-          if (temp.GetSize() == 4) { // this is quite cheap...
-            if (espOffset2 == 0x00) {
-              espOffset2 = diff;
-            } else if (espOffset1 == 0x00) {
-              espOffset1 = diff;
-            }
-          }
-        }
-
-
-        --funcPtr;
-      }
-
-      for (int i = 0; i < iniReplacementSize; ++i) {
-        ULONG* pos = reinterpret_cast<ULONG*>(s_FunctionBuffer + i);
-        if (*pos == 0xBADF00D1) {
-          *pos = espOffset1;
-        } else if (*pos == 0xBADF00D2) {
-          *pos = espOffset2;
-        }
-      }
-      if (found) {
-        Logger::Instance().info("archive list limit removed");
-      } else {
-        Logger::Instance().error("failed to remove limit on archive list!");
-      }
+    if (steps == 0) {
+      Logger::Instance().error("failed to remove limit on archive list!");
     }
   }
 
@@ -1015,7 +1043,6 @@ DWORD WINAPI GetPrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LP
 
     strncpy(lpReturnedString, bsaResourceList.c_str(), length);
     lpReturnedString[length] = '\0';
-
     return length;
   } else if (_stricmp(lpKeyName, "sResourceArchiveList2") == 0) {
     // don't use second resource list at all
@@ -1259,8 +1286,9 @@ HFILE WINAPI OpenFile_rep(LPCSTR lpFileName, LPOFSTRUCT lpReOpenBuff, UINT uStyl
 {
   PROFILE();
 
-  LOGDEBUG("openfile called");
-  return OpenFile_reroute(lpFileName, lpReOpenBuff, uStyle);
+  std::string rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
+  LOGDEBUG("openfile called: %s -> %s", lpFileName, rerouteFilename.c_str());
+  return OpenFile_reroute(rerouteFilename.c_str(), lpReOpenBuff, uStyle);
 }
 
 DWORD WINAPI GetCurrentDirectoryW_rep(DWORD nBufferLength, LPWSTR lpBuffer)
