@@ -45,6 +45,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include <appconfig.h>
 #include "obse.h"
 #include <boost/scoped_array.hpp>
+#include <Shellapi.h>
 
 
 using namespace MOShared;
@@ -100,6 +101,8 @@ CopyFileW_type CopyFileW_reroute = CopyFileW;
 CreateHardLinkW_type CreateHardLinkW_reroute = CreateHardLinkW;
 CreateHardLinkA_type CreateHardLinkA_reroute = CreateHardLinkA;
 GetFullPathNameW_type GetFullPathNameW_reroute = GetFullPathNameW;
+SHFileOperationW_type SHFileOperationW_reroute = SHFileOperationW;
+
 
 ModInfo *modInfo = NULL;
 
@@ -906,6 +909,11 @@ static bool identifyAndManipulate(DWORD *pos, DWORD size)
   Disasm disasm(funcPtr);
   PBYTE sPtr = disasm.GetNextCommand();
   if (disasm.GetOpcode() != 0x8D) return false;
+
+  //
+  // if we got here we seem to be right
+  //
+
   void *function = NULL;
   switch (disasm.GetReg2()) {
     case 0: function = pushModEAX; break;
@@ -913,6 +921,7 @@ static bool identifyAndManipulate(DWORD *pos, DWORD size)
     case 2: function = pushModEDX; break;
     case 3: function = pushModEBX; break;
   }
+
 
   int funcSize = getSnippetSize(function);
   memcpy(tPtr, function, funcSize);
@@ -1489,6 +1498,66 @@ DWORD WINAPI GetFullPathNameW_rep(LPCWSTR lpFileName, DWORD nBufferLength, LPWST
 }
 
 
+int STDAPICALLTYPE SHFileOperationW_rep(LPSHFILEOPSTRUCTW lpFileOp)
+{
+  SHFILEOPSTRUCTW newOp;
+  newOp.hwnd = lpFileOp->hwnd;
+  newOp.wFunc = lpFileOp->wFunc;
+  newOp.fFlags = lpFileOp->fFlags;
+  newOp.fAnyOperationsAborted = lpFileOp->fAnyOperationsAborted;
+  newOp.hNameMappings = lpFileOp->hNameMappings;
+  newOp.lpszProgressTitle = lpFileOp->lpszProgressTitle;
+
+  std::vector<wchar_t> newFrom;
+  LPCWSTR pos = lpFileOp->pFrom;
+  for (;;) {
+    if (*pos == L'\0') break;
+
+    std::wstring rerouted = modInfo->getRerouteOpenExisting(pos);
+    newFrom.insert(newFrom.end(), rerouted.begin(), rerouted.end());
+    newFrom.push_back(L'\0');
+    pos += wcslen(pos) + 1;
+  }
+  newFrom.push_back(L'\0');
+
+  newOp.pFrom = &newFrom[0];
+
+  std::vector<wchar_t> newTo;
+  if (lpFileOp->pTo != NULL) {
+    pos = lpFileOp->pTo;
+    for (;;) {
+      if (*pos == L'\0') break;
+
+      std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(pos);
+
+      if (StartsWith(pos, modInfo->getDataPathW().c_str()) && !::FileExists(pos)) {
+        std::wostringstream temp;
+        temp << GameInfo::instance().getOverwriteDir() << "\\" << (pos + modInfo->getDataPathW().length());
+        rerouteFilename = temp.str();
+
+        std::wstring targetDirectory = rerouteFilename.substr(0, rerouteFilename.find_last_of(L"\\/"));
+        CreateDirectoryRecursive(targetDirectory.c_str(), NULL);
+        modInfo->addOverwriteFile(rerouteFilename);
+      }
+
+      newTo.insert(newTo.end(), rerouteFilename.begin(), rerouteFilename.end());
+      newTo.push_back(L'\0');
+      pos += wcslen(pos) + 1;
+    }
+    newTo.push_back(L'\0');
+
+    newOp.pTo = &newTo[0];
+  } else {
+    newOp.pTo = NULL;
+  }
+
+  LOGDEBUG("sh file operation %d: %ls - %ls", lpFileOp->wFunc, lpFileOp->pFrom,
+           lpFileOp->pTo != NULL ? lpFileOp->pTo : L"NULL");
+  return SHFileOperationW_reroute(&newOp);
+}
+
+
+
 
 std::vector<ApiHook*> hooks;
 
@@ -1559,6 +1628,7 @@ BOOL InitHooks()
     INITHOOK(TEXT("kernel32.dll"), CreateHardLinkA);
     INITHOOK(TEXT("kernel32.dll"), CreateHardLinkW);
     INITHOOK(TEXT("kernel32.dll"), GetFullPathNameW);
+    INITHOOK(TEXT("Shell32.dll"), SHFileOperationW);
 
     LOGDEBUG("all hooks installed");
 
