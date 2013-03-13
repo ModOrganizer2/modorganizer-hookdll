@@ -55,6 +55,11 @@ DEFINES += DEBUG_LOG
 
 #QMAKE_CFLAGS += -O2 -MT
 
+QMAKE_CFLAGS_WARN_ON -= -W3
+QMAKE_CFLAGS_WARN_ON += -W4
+
+QMAKE_CXXFLAGS += -GS -RTCs
+
 LIBS += -lmo_shared -lkernel32 -luser32 -lshell32 -ladvapi32 -lshlwapi -lVersion -lbsatk
 
 LIBS += -L"$(ZLIBPATH)/build" -lzlibstatic -L"$(BOOSTPATH)/stage/lib"

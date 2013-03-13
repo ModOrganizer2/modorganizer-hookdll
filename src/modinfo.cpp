@@ -163,7 +163,7 @@ ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirecto
 
   while (!file.eof()) {
     file.getline(buffer, 1024);
-    if (strlen(buffer) == 0) {
+    if (buffer[0] == '\0') {
       continue;
     }
     if ((buffer[0] != '#') && (buffer[0] != '-')) {
@@ -195,7 +195,11 @@ ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirecto
     HANDLE search = ::FindFirstFileW(bsaSearch.c_str(), &findData);
     BOOL success = search != INVALID_HANDLE_VALUE;
     while (success) {
-      m_DirectoryStructure.addFromBSA(*modIter, temp.str(), temp.str().append(L"\\").append(findData.cFileName), index);
+      std::wstring tempStr = temp.str();
+      m_DirectoryStructure.addFromBSA(*modIter,
+                                      tempStr,
+                                      tempStr.append(L"\\").append(findData.cFileName),
+                                      index);
       success = ::FindNextFileW(search, &findData);
     }
   }
@@ -259,7 +263,8 @@ bool ModInfo::setCwd(const std::wstring &currentDirectory)
   std::wstring overwriteDir = GameInfo::instance().getOverwriteDir();
   m_CurrentDirectory.clear();
   if (StartsWith(temp, modsDir.c_str())) {
-    wchar_t *relCwd = temp + modsDir.length() + 1;
+    wchar_t *relCwd = temp + modsDir.length();
+    if (*relCwd != L'\0') relCwd += 1;
     // skip the mod name
     relCwd = wcschr(relCwd, L'\\');
 
@@ -272,13 +277,10 @@ bool ModInfo::setCwd(const std::wstring &currentDirectory)
 
     return true;
   } else if (StartsWith(temp, overwriteDir.c_str())) {
-    wchar_t *relCwd = temp + overwriteDir.length() + 1;
-    if (relCwd != NULL) {
-      Canonicalize(temp, GameInfo::instance().getGameDirectory().append(L"\\data\\").append(relCwd).c_str());
-      m_CurrentDirectory.assign(temp);
-    } else {
-      m_CurrentDirectory = m_DataPathAbsoluteW;
-    }
+    wchar_t *relCwd = temp + overwriteDir.length();
+    if (*relCwd != L'\0') relCwd += 1;
+    Canonicalize(temp, GameInfo::instance().getGameDirectory().append(L"\\data\\").append(relCwd).c_str());
+    m_CurrentDirectory.assign(temp);
 
     return true;
   } else if (StartsWith(temp, m_DataPathAbsoluteW.c_str()) && !FileExists_reroute(temp)) {
@@ -355,7 +357,7 @@ void ModInfo::loadDeleters(const std::string &listFileName)
 
   while (!file.eof()) {
     file.getline(buffer, 1024);
-    if ((strlen(buffer) == 0) ||
+    if ((buffer[0] == '\0') ||
         (buffer[0] == '#')) {
       continue;
     }
@@ -379,14 +381,14 @@ void ModInfo::addModDirectory(const std::wstring& modPath)
   if (namePos != std::string::npos) {
     name = modPath.substr(namePos + 1);
   }
-  m_DirectoryStructure.addFromOrigin(name, modPath, m_ModList.size());
+  m_DirectoryStructure.addFromOrigin(name, modPath, static_cast<int>(m_ModList.size()));
 }
 
 
 void ModInfo::addModFile(const std::wstring &fileName)
 {
 #ifdef DEBUG_LOG
-  int offset = m_ModsPath.length() + m_ModList.rbegin()->length() + 2; // 2 (back-)slashes
+  size_t offset = m_ModsPath.length() + m_ModList.rbegin()->length() + 2; // 2 (back-)slashes
   LOGDEBUG("add mod file %ls (%ls)", fileName.c_str(), fileName.substr(offset).c_str());
 #endif // DEBUG_LOG
   FILETIME time;
@@ -401,7 +403,7 @@ void ModInfo::addModFile(const std::wstring &fileName)
 
 void ModInfo::addOverwriteFile(const std::wstring &fileName)
 {
-  int offset = GameInfo::instance().getOverwriteDir().length() + 1;
+  size_t offset = GameInfo::instance().getOverwriteDir().length() + 1;
   while ((fileName[offset] == '\\') || (fileName[offset] == '/')) {
     ++offset;
   }
@@ -443,9 +445,6 @@ std::wstring ModInfo::getRemovedLocation(const std::wstring &fileName)
 {
   time_t now = time(NULL);
   for (std::list<RemovalInfo>::const_iterator iter = m_RemovalInfo.begin(); iter != m_RemovalInfo.end();) {
-    // have to make a copy as iter->fileName.c_str() returns a pointer to (null). No clue why, probably some funny std::string interna
-    std::wstring temp = iter->fileName;
-
     if (iter->time + 5 < now) {
       iter = m_RemovalInfo.erase(iter);
     } else if (_wcsicmp(iter->fileName.c_str(), fileName.c_str()) == 0) {
@@ -559,39 +558,8 @@ bool LessThanName(const WIN32_FIND_DATAW& lhs, const WIN32_FIND_DATAW& rhs) {
 }
 
 
-HANDLE ModInfo::savesSearch(HANDLE searchHandle, WIN32_FIND_DATAW &searchData)
-{
-  SearchBuffer searchBuffer;
-
-  BOOL searchStatus = searchHandle != INVALID_HANDLE_VALUE;
-  while (searchStatus) {
-    addSearchResult(searchBuffer, L"", searchData);
-
-    ::ZeroMemory(&searchData, sizeof(WIN32_FIND_DATAW));
-    searchStatus = FindNextFileW_reroute(searchHandle, &searchData);
-  }
-
-  // if no search result, close the primary handle too
-  if (searchBuffer.empty()) {
-    // all search results filtered
-    FindClose_reroute(searchHandle);
-    searchHandle = INVALID_HANDLE_VALUE;
-  }
-
-  if (searchHandle != INVALID_HANDLE_VALUE) {
-    // copy search results to buffer
-    m_Searches[searchHandle].first = SearchResult();
-    std::copy(searchBuffer.begin(), searchBuffer.end(), std::back_inserter(m_Searches[searchHandle].first));
-    std::sort(m_Searches[searchHandle].first.begin(), m_Searches[searchHandle].first.end(), LessThanDate);
-    m_Searches[searchHandle].second = m_Searches[searchHandle].first.begin();
-  }
-
-  return searchHandle;
-}
-
-
 HANDLE ModInfo::dataSearch(LPCWSTR absoluteFileName,
-                           int filenameOffset,
+                           size_t filenameOffset,
                            HANDLE dataHandle,
                            WIN32_FIND_DATAW &searchData,
                            FINDEX_INFO_LEVELS fInfoLevelId,
@@ -607,7 +575,7 @@ HANDLE ModInfo::dataSearch(LPCWSTR absoluteFileName,
   WCHAR relativePath[MAX_PATH];
 
   if (slashPos != NULL) {
-    int length = std::min<int>(static_cast<int>(slashPos - absoluteFileName - filenameOffset), MAX_PATH);
+    size_t length = std::min<size_t>(static_cast<size_t>(slashPos - absoluteFileName - filenameOffset), MAX_PATH);
     if (length > 0) {
       wcsncpy(relativePath, absoluteFileName + filenameOffset, length);
       relativePath[length] = L'\0';
@@ -664,7 +632,6 @@ HANDLE ModInfo::dataSearch(LPCWSTR absoluteFileName,
     // copy search results to buffer
     m_Searches[primaryHandle].first = SearchResult();
     std::copy(searchBuffer.begin(), searchBuffer.end(), std::back_inserter(m_Searches[primaryHandle].first));
-//    std::sort(m_Searches[primaryHandle].first.begin(), m_Searches[primaryHandle].first.end(), LessThanDate);
     std::sort(m_Searches[primaryHandle].first.begin(), m_Searches[primaryHandle].first.end(), LessThanName);
     m_Searches[primaryHandle].second = m_Searches[primaryHandle].first.begin();
   }
@@ -686,13 +653,8 @@ HANDLE ModInfo::findStart(LPCWSTR lpFileName,
   // search pattern with full absolute path
   WCHAR absoluteFileName[MAX_PATH];
   getFullPathName(lpFileName, absoluteFileName, MAX_PATH);
-/*  if (m_CurrentDirectory.length() != 0) {
-    PathCombineW(absoluteFileName, m_CurrentDirectory.c_str(), lpFileName);
-  } else {
-    GetFullPathNameW(lpFileName, MAX_PATH, absoluteFileName, NULL);
-  }*/
 
-  int filenameOffset = 0;
+  size_t filenameOffset = 0;
   if ((StartsWith(absoluteFileName, m_DataPathAbsoluteW.c_str())) &&
       ((absoluteFileName[m_DataPathAbsoluteW.length()] == '\\') ||
        (absoluteFileName[m_DataPathAbsoluteW.length()] == '/'))) {
@@ -702,8 +664,7 @@ HANDLE ModInfo::findStart(LPCWSTR lpFileName,
     return searchHandle;
   }
 
-  HANDLE handle = INVALID_HANDLE_VALUE;
-  handle = dataSearch(absoluteFileName, filenameOffset, searchHandle,
+  HANDLE handle = dataSearch(absoluteFileName, filenameOffset, searchHandle,
                     tempData, fInfoLevelId, fSearchOp,
                     lpSearchFilter, dwAdditionalFlags);
 
@@ -722,9 +683,10 @@ BOOL ModInfo::findNext(HANDLE handle, LPWIN32_FIND_DATAW findFileData)
 {
   SearchesMap::iterator Iter = m_Searches.find(handle);
   if (Iter != m_Searches.end()) {
-    if (Iter->second.second != Iter->second.first.end()) {      
-      *findFileData = *(Iter->second.second);
-      ++Iter->second.second;
+    std::pair<SearchResult, SearchResult::iterator> &search = Iter->second;
+    if (search.second != search.first.end()) {
+      *findFileData = *(search.second);
+      ++search.second;
       return true;
     } else {
       ::SetLastError(ERROR_NO_MORE_FILES);
@@ -773,19 +735,19 @@ std::string ModInfo::getRerouteOpenExisting(LPCSTR originalName)
 }
 
 
-void ModInfo::getFullPathName(LPCWSTR originalName, LPWSTR targetBuffer, int bufferLength)
+void ModInfo::getFullPathName(LPCWSTR originalName, LPWSTR targetBuffer, size_t bufferLength)
 {
   WCHAR temp[MAX_PATH];
   if (m_CurrentDirectory.length() != 0) {
     WCHAR cwd[MAX_PATH];
     DWORD length = ::GetCurrentDirectoryW_reroute(MAX_PATH, cwd);
     if (StartsWith(originalName, cwd)) {
-      _snwprintf(temp, bufferLength, L"%ls\\%ls", m_CurrentDirectory.c_str(), originalName + length);
+      _snwprintf(temp, bufferLength, L"%ls\\%ls", m_CurrentDirectory.c_str(), originalName + static_cast<size_t>(length));
     } else {
       ::PathCombineW(temp, m_CurrentDirectory.c_str(), originalName);
     }
   } else {
-    ::GetFullPathNameW_reroute(originalName, bufferLength, temp, NULL);
+    ::GetFullPathNameW_reroute(originalName, static_cast<DWORD>(bufferLength), temp, NULL);
   }
   checkPathAlternative(temp);
   ::Canonicalize(targetBuffer, temp);
@@ -794,7 +756,7 @@ void ModInfo::getFullPathName(LPCWSTR originalName, LPWSTR targetBuffer, int buf
 
 std::wstring ModInfo::getRerouteOpenExisting(LPCWSTR originalName, bool preferOriginal, bool *rerouted)
 {
-  PROFILE();
+  PROFILE_S();
 
   if (rerouted != NULL) {
     *rerouted = false;
@@ -845,7 +807,7 @@ std::wstring ModInfo::getRerouteOpenExisting(LPCWSTR originalName, bool preferOr
 }
 
 
-std::wstring ModInfo::getPath(LPCWSTR originalName, int offset, int &origin)
+std::wstring ModInfo::getPath(LPCWSTR originalName, size_t offset, int &origin)
 {
   detectOverwriteChange();
   bool archive = false;
@@ -864,8 +826,6 @@ std::wstring ModInfo::getPath(LPCWSTR originalName, int offset, int &origin)
     }
     return fullPath.str();
   }
-
-  return originalName;
 }
 
 /* BROKEN AND OBSOLETE

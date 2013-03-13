@@ -164,10 +164,10 @@ void ApiHook::AddrReplace(LPBYTE start,
 
 size_t ApiHook::CreateReroute(LPBYTE original)
 {
-	size_t size = 0;
-	size_t relativeAdd = 0;
-	int num = 0;
-	PBYTE curPos;
+  size_t size = 0;
+  size_t relativeAdd = 0;
+  int num = 0;
+  PBYTE curPos = _fdisasm.GetEnd();
 	Disasm disasm = _fdisasm.GetDisasm();
 	// Calculate how many instructions need to be moved
 	while (size < sizeof(jump)) {
@@ -195,7 +195,7 @@ size_t ApiHook::CreateReroute(LPBYTE original)
 	size_t jlen = sizeof(void*) + 1;					// size of a jump: 1 byte opcode + size of an address
 
 	// allocate memory for the reroute that is executable
-	_reroute = reinterpret_cast<LPBYTE>(VirtualAlloc(NULL,
+  _reroute = reinterpret_cast<LPBYTE>(::VirtualAlloc(NULL,
 																			size + jlen + sizeof(char*) + relativeAdd,
 																			MEM_COMMIT | MEM_RESERVE,
 																			PAGE_EXECUTE_READWRITE));

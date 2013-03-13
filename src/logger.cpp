@@ -59,14 +59,15 @@ Logger::Logger(LPCTSTR logPath, int logLevel)
 {
 //  TCHAR temp[MAX_PATH];
 //  _sntprintf(temp, MAX_PATH, TEXT("%s\\modorganizer.log"), basePath);
+
   // just in case...
   ::SetFileAttributes(logPath, FILE_ATTRIBUTE_NORMAL);
   int Tries = 5;
   while ((m_LogFile == INVALID_HANDLE_VALUE) && Tries > 0) {
-    m_LogFile = CreateFile(logPath,
+    m_LogFile = ::CreateFile(logPath,
           FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (m_LogFile == INVALID_HANDLE_VALUE) {
-      Sleep(1);
+      ::Sleep(200);
     }
     --Tries;
   }

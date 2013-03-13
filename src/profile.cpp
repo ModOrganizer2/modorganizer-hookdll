@@ -8,7 +8,7 @@ time_t TProfile::s_LastDisplay = time(NULL);
 
 void TProfile::displayProfile()
 {
-  if (s_Times.size() != 0) {
+  if (!s_Times.empty()) {
     double total = 0.0;
     for (std::map<const char*, Time>::const_iterator iter = s_Times.begin(); iter != s_Times.end(); ++iter) {
       Logger::Instance().info("%s: %lu calls, %d to %d us (total: %d us, avg: %d us)",

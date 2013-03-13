@@ -48,15 +48,16 @@ private:
   static void registerTime(const char *functionName, double timeMS) {
     std::pair<std::map<const char*, Time>::iterator, bool> iter = s_Times.insert(std::make_pair(functionName, Time()));
     std::map<const char*, Time>::iterator timeIter = iter.first;
+    Time &timeInfo = timeIter->second;
 
-    if (timeMS < timeIter->second.m_Min) {
-      timeIter->second.m_Min = timeMS;
+    if (timeMS < timeInfo.m_Min) {
+      timeInfo.m_Min = timeMS;
     }
-    if (timeMS > timeIter->second.m_Max) {
-      timeIter->second.m_Max = timeMS;
+    if (timeMS > timeInfo.m_Max) {
+      timeInfo.m_Max = timeMS;
     }
-    timeIter->second.m_Sum += timeMS;
-    ++timeIter->second.m_Count;
+    timeInfo.m_Sum += timeMS;
+    ++timeInfo.m_Count;
     time_t now = time(NULL);
     if (now - s_LastDisplay > 60) {
       displayProfile();
@@ -76,9 +77,11 @@ private:
 
 
 //#define PROFILE() TProfile __FUNCTION__ ## prof(__FUNCSIG__);
+//#define PROFILE_S() TProfile __FUNCTION__ ## prof(__FUNCSIG__);
 //#define PROFILEN(name) TProfile name ## prof(#name);
 //#define PROFILE() LOGDEBUG("%s", __FUNCSIG__)
 #define PROFILE()
+#define PROFILE_S()
 #define PROFILEN(name)
 
 

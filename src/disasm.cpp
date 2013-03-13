@@ -475,7 +475,7 @@ void Disasm::ReadCommand(BYTE *pos)
 			_cmd_info.group = 42;
 			for (int i = 0; i < 17 && _cmd_info.group == 42; i++) {
 				if (optogroup[i][0] == _cmd_info.opcode) {
-					_cmd_info.group = optogroup[i][1];
+          _cmd_info.group = static_cast<short>(optogroup[i][1]);
 				}
 			}
 		}
