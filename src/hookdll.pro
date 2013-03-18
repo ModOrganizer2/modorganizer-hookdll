@@ -44,7 +44,7 @@ CONFIG(debug, debug|release) {
   LIBS += -lDbgHelp
   DEFINES += DEBUG
 } else {
-		LIBS += -L$$OUT_PWD/../shared/release -L$$OUT_PWD/../bsatk/release
+  LIBS += -L$$OUT_PWD/../shared/release -L$$OUT_PWD/../bsatk/release
 }
 
 DEFINES += UNICODE _UNICODE
@@ -53,12 +53,10 @@ DEFINES += DEBUG_LOG
 
 #QMAKE_CXXFLAGS += /analyze
 
-#QMAKE_CFLAGS += -O2 -MT
-
 QMAKE_CFLAGS_WARN_ON -= -W3
 QMAKE_CFLAGS_WARN_ON += -W4
 
-QMAKE_CXXFLAGS += -GS -RTCs
+#QMAKE_CXXFLAGS += -GS -RTCs
 
 LIBS += -lmo_shared -lkernel32 -luser32 -lshell32 -ladvapi32 -lshlwapi -lVersion -lbsatk
 

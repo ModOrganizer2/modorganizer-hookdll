@@ -142,7 +142,6 @@ enum {
 
 char modName[MAX_PATH];
 
-
 // buffer for paths that we need to access often, so we don't have to convert every time
 struct {
   std::wstring omoW;
@@ -191,7 +190,6 @@ BOOL WINAPI CreateProcessA_rep(LPCSTR lpApplicationName,
   PROFILE();
   BOOL susp = dwCreationFlags & CREATE_SUSPENDED;
   DWORD flags = dwCreationFlags | CREATE_SUSPENDED;
-
   LOGDEBUG("create process (a) %s - %s (in %s)",
            lpApplicationName != NULL ? lpApplicationName : "null",
            lpCommandLine != NULL ? lpCommandLine : "null",
@@ -232,8 +230,9 @@ BOOL WINAPI CreateProcessA_rep(LPCSTR lpApplicationName,
 
     if (!::CreateProcessA_reroute(lpApplicationName, lpCommandLine, lpProcessAttributes,
           lpThreadAttributes, bInheritHandles, flags, lpEnvironment,
-          reroutedCwd.length() != 0 ? reroutedCwd.c_str() : lpCurrentDirectory,
+          lpCurrentDirectory != NULL ? reroutedCwd.c_str() : NULL,
           lpStartupInfo, lpProcessInformation)) {
+      LOGDEBUG("process failed to start (%lu)", ::GetLastError());
       return FALSE;
     }
   }
@@ -291,7 +290,7 @@ BOOL WINAPI CreateProcessW_rep(LPCWSTR lpApplicationName,
 
   if (!::CreateProcessW_reroute(lpApplicationName, lpCommandLine, lpProcessAttributes,
         lpThreadAttributes, bInheritHandles, flags, lpEnvironment,
-        reroutedCwd.length() != 0 ? reroutedCwd.c_str() : lpCurrentDirectory,
+        lpCurrentDirectory != NULL ? reroutedCwd.c_str() : NULL,
         lpStartupInfo, lpProcessInformation)) {
     LOGDEBUG("process failed to start (%lu)", ::GetLastError());
     return FALSE;
@@ -439,7 +438,7 @@ BOOL WINAPI CloseHandle_rep(HANDLE hObject)
 DWORD WINAPI GetFileAttributesW_rep(LPCWSTR lpFileName)
 {
   PROFILE();
-  if (lpFileName[0] == L'\0') {
+  if ((lpFileName == NULL) || (lpFileName[0] == L'\0')) {
     return GetFileAttributesW_reroute(lpFileName);
   }
   LPCWSTR baseName = GetBaseName(lpFileName);
@@ -526,10 +525,9 @@ HANDLE WINAPI FindFirstFileExW_rep(LPCWSTR lpFileName,
                                    DWORD dwAdditionalFlags)
 {
   PROFILE();
-
-  if (HookLock::isLocked()) return FindFirstFileExW_reroute(lpFileName, fInfoLevelId, lpFindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags);
-
+  if (HookLock::isLocked() || (lpFileName == NULL)) return FindFirstFileExW_reroute(lpFileName, fInfoLevelId, lpFindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags);
   LPCWSTR baseName = GetBaseName(lpFileName);
+
   size_t pathLen = baseName - lpFileName;
 
   std::wstring rerouteFilename = lpFileName;
@@ -541,7 +539,6 @@ HANDLE WINAPI FindFirstFileExW_rep(LPCWSTR lpFileName,
   } else if ((sPos = wcswcs(lpFileName, AppConfig::localSavePlaceholder())) != NULL) {
     rerouteFilename = modInfo->getProfilePath().append(L"\\saves\\").append(sPos + wcslen(AppConfig::localSavePlaceholder()));
   }
-
   HANDLE result = modInfo->findStart(rerouteFilename.c_str(), fInfoLevelId, lpFindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags);
 
   if (result != INVALID_HANDLE_VALUE) {
@@ -758,6 +755,7 @@ static void GetSectionRange(DWORD *start, DWORD *end)
   }
 }
 
+#pragma optimize( "", off )
 
 static const int s_BufferSize = 0x8000;
 static char s_Buffer[s_BufferSize];
@@ -860,6 +858,7 @@ __declspec(naked) void returnInstrEDX()
   };
 }
 
+#pragma optimize( "", on )
 
 size_t getSnippetSize(void *function)
 {
@@ -874,7 +873,6 @@ static bool identifyAndManipulate(DWORD *pos, DWORD size)
 //  memset(s_FunctionBuffer, 0x90, FUNCTION_BUFFER_SIZE);
   DWORD ignore;
   ::VirtualProtect(s_FunctionBuffer, 256, PAGE_EXECUTE_READWRITE, &ignore);
-
   unsigned char *funcPtr = reinterpret_cast<unsigned char*>(*pos);
 
   enum Registers {
@@ -927,7 +925,6 @@ static bool identifyAndManipulate(DWORD *pos, DWORD size)
   if (!found) {
     return false;
   }
-
   char *tPtr = s_FunctionBuffer;
   char *functionEnd = s_FunctionBuffer + FUNCTION_BUFFER_SIZE;
 
@@ -1037,9 +1034,9 @@ static bool identifyAndManipulate(DWORD *pos, DWORD size)
 DWORD WINAPI GetPrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LPCSTR lpDefault,
                                           LPSTR lpReturnedString, DWORD nSize, LPCSTR lpFileName)
 {
+  int localDummy = 42;
   PROFILE();
-
-  if (HookLock::isLocked() || lpFileName == NULL) {
+  if (HookLock::isLocked() || (lpFileName == NULL)) {
     return GetPrivateProfileStringA_reroute(lpAppName, lpKeyName, lpDefault, lpReturnedString, nSize, lpFileName);
   }
 
@@ -1070,18 +1067,16 @@ DWORD WINAPI GetPrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LP
     GetSectionRange(&start, &end);
     // search up through the stack to find the first address that belongs to the code-segment of the game-binary.
     // that is the return address to the function that called GetPrivateProfileString
-
-    DWORD *pos = reinterpret_cast<DWORD*>(&lpFileName);
-    // if this takes more than 10 steps, this was probably not called by the game binary at all
-    DWORD *lastPos = pos + 10;
-    for (; pos < lastPos; --pos) {
+    DWORD *pos = reinterpret_cast<DWORD*>(&localDummy);
+    // if this takes more than 100 steps, this was probably not called by the game binary at all
+    DWORD *lastPos = pos + 100;
+    for (; pos < lastPos; ++pos) {
       if ((*pos > start) && (*pos < end)) {
         if (identifyAndManipulate(pos, nSize)) {
           break;
         }
       }
     }
-
     if (archiveListHookState == HOOK_FAILED) {
       Logger::Instance().error("failed to remove limit on archive list!");
     }

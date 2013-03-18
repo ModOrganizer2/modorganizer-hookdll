@@ -52,7 +52,6 @@ void Disasm::Init(PBYTE code, bool e64bit)
 	if (_64bit) {
 		throw std::runtime_error("64 bit executables currently not supported by disassembler");
 	}
-
 	ReadCommand(code);
 }
 

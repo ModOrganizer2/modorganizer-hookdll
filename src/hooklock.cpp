@@ -10,5 +10,3 @@ HookLock::HookLock()
     m_Locked = true;
   }
 }
-
-
