@@ -57,18 +57,15 @@ void Logger::Init(LPCTSTR basePath, int logLevel)
 Logger::Logger(LPCTSTR logPath, int logLevel)
   : m_LogPath(logPath), m_LogLevel(logLevel), m_LogFile(INVALID_HANDLE_VALUE)
 {
-//  TCHAR temp[MAX_PATH];
-//  _sntprintf(temp, MAX_PATH, TEXT("%s\\modorganizer.log"), basePath);
   // just in case...
   ::SetFileAttributes(logPath, FILE_ATTRIBUTE_NORMAL);
-  int Tries = 5;
-  while ((m_LogFile == INVALID_HANDLE_VALUE) && Tries > 0) {
-    m_LogFile = CreateFile(logPath,
+  int counter = 0;
+  while (m_LogFile == INVALID_HANDLE_VALUE) {
+    m_LogFile = ::CreateFile(m_LogPath.c_str(),
           FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (m_LogFile == INVALID_HANDLE_VALUE) {
-      Sleep(1);
+      m_LogPath = findNameVariant(logPath, counter);
     }
-    --Tries;
   }
 
   if (m_LogFile == INVALID_HANDLE_VALUE) {
@@ -92,6 +89,14 @@ Logger::~Logger()
 }
 
 
+std::basic_string<TCHAR> Logger::findNameVariant(const std::basic_string<TCHAR> &name, int &counter)
+{
+  TCHAR buffer[10];
+  _sntprintf(buffer, 10, TEXT("%d"), ++counter);
+  return name.substr(0, name.length() - 4).append(TEXT("_")).append(buffer).append(TEXT(".log"));
+}
+
+
 void Logger::wrapUpLog()
 {
   HANDLE testHandle = CreateFileW_reroute(m_LogPath.c_str(),
@@ -107,29 +112,22 @@ void Logger::wrapUpLog()
     ::GetDateFormat(LOCALE_USER_DEFAULT, 0, &time, TEXT("yy'_'MM'_'dd"), localDate, 255);
     ::GetTimeFormat(LOCALE_USER_DEFAULT, 0, &time, TEXT("HH'_'mm"), localTime, 255);
 
-    std::basic_string<TCHAR> temp = m_LogPath.substr(0, m_LogPath.length() - 4)
-                                             .append(TEXT("_"))
-                                             .append(localDate)
-                                             .append(TEXT("_"))
-                                             .append(localTime)
-                                             .append(TEXT(".log"));
+    std::basic_string<TCHAR> targetName = m_LogPath.substr(0, m_LogPath.length() - 4)
+                                                   .append(TEXT("_"))
+                                                   .append(localDate)
+                                                   .append(TEXT("_"))
+                                                   .append(localTime)
+                                                   .append(TEXT(".log"));
 
     ::CloseHandle(testHandle);
+
+    std::basic_string<TCHAR> rotName = targetName;
 
     int counter = 0;
     // TODO: this code contains a race condition where two processes assume they are last and try to move the file.
     // This is however quite unlikely and most of all, it wouldn't cause harm, the second move would fail and that's that
-    while (!::MoveFile(m_LogPath.c_str(), temp.c_str()) && (::GetLastError() == ERROR_ALREADY_EXISTS)) {
-      TCHAR buffer[10];
-      _sntprintf(buffer, 10, TEXT("%d"), ++counter);
-      temp  = m_LogPath.substr(0, m_LogPath.length() - 4)
-          .append(TEXT("_"))
-          .append(localDate)
-          .append(TEXT("_"))
-          .append(localTime)
-          .append(TEXT("_"))
-          .append(buffer)
-          .append(TEXT(".log"));
+    while (!::MoveFile(m_LogPath.c_str(), rotName.c_str()) && (::GetLastError() == ERROR_ALREADY_EXISTS)) {
+      rotName = findNameVariant(targetName, counter);
     }
   }
 }

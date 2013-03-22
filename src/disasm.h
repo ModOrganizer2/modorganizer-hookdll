@@ -65,6 +65,9 @@ public:
 
 	BOOL TwoByteOp() const throw();
 
+  BYTE GetReg1() const throw();
+  BYTE GetReg2() const throw();
+
 	size_t GetSize() const throw();
 
 	BOOL IsRelative() const throw();

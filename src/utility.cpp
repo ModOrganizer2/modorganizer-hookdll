@@ -136,7 +136,12 @@ LPCSTR GetBaseName(LPCSTR string)
 
 LPCWSTR GetBaseName(LPCWSTR string)
 {
-  LPCWSTR result = string + wcslen(string) - 1;
+  LPCWSTR result;
+  if ((string == NULL) || (string[0] == L'\0')) {
+    result = string;
+  } else {
+    result = string + wcslen(string) - 1;
+  }
   while (result > string) {
     if ((*result == L'\\') || (*result == L'/')) {
       ++result;

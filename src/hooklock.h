@@ -17,7 +17,8 @@ public:
 private:
 
   bool m_Owner;
-  static __declspec(thread) bool m_Locked;
+//  static __declspec(thread) bool m_Locked;
+  static bool m_Locked;
 
 };
 

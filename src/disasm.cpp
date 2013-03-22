@@ -52,7 +52,6 @@ void Disasm::Init(PBYTE code, bool e64bit)
 	if (_64bit) {
 		throw std::runtime_error("64 bit executables currently not supported by disassembler");
 	}
-
 	ReadCommand(code);
 }
 
@@ -334,9 +333,18 @@ BYTE Disasm::GetOpcode() const throw()
 
 BOOL Disasm::TwoByteOp() const throw()
 {
-	return _cmd_info.twoByteOpcode;
+  return _cmd_info.twoByteOpcode;
 }
 
+BYTE Disasm::GetReg1() const
+{
+  return _cmd_info.modrm & 0x07;
+}
+
+BYTE Disasm::GetReg2() const
+{
+  return (_cmd_info.modrm & 0x38) >> 3;
+}
 
 size_t Disasm::GetSize() const throw()
 {
@@ -466,7 +474,7 @@ void Disasm::ReadCommand(BYTE *pos)
 			_cmd_info.group = 42;
 			for (int i = 0; i < 17 && _cmd_info.group == 42; i++) {
 				if (optogroup[i][0] == _cmd_info.opcode) {
-					_cmd_info.group = optogroup[i][1];
+          _cmd_info.group = static_cast<short>(optogroup[i][1]);
 				}
 			}
 		}

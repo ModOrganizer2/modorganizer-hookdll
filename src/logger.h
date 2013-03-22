@@ -57,9 +57,11 @@ public:
   void info(const char* format, ...);
 
 private:
+
   Logger(LPCTSTR basePath, int logLevel);
   void wrapUpLog();
   void log(const char* prefix, const char* format, va_list argList);
+  std::basic_string<TCHAR> findNameVariant(const std::basic_string<TCHAR> &name, int &counter);
 
 private:
 

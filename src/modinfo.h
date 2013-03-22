@@ -82,7 +82,7 @@ public:
 
   std::string getRerouteOpenExisting(LPCSTR originalName);
   std::wstring getRerouteOpenExisting(LPCWSTR originalName, bool preferOriginal = false, bool *rerouted = NULL);
-  std::wstring getPath(LPCWSTR originalName, int offset, int &origin);
+  std::wstring getPath(LPCWSTR originalName, size_t offset, int &origin);
 
   const std::string &getDataPathA() const { return m_DataPathAbsoluteA; }
   const std::wstring &getDataPathW() const { return m_DataPathAbsoluteW; }
@@ -98,7 +98,7 @@ public:
 
   // drop-in replacement for the GetFullPathNameW function, taking into account
   // the fake cwd
-  void getFullPathName(LPCWSTR originalName, LPWSTR targetBuffer, int bufferLength);
+  void getFullPathName(LPCWSTR originalName, LPWSTR targetBuffer, size_t bufferLength);
 
   std::wstring getRemovedLocation(const std::wstring &fileName);
 
@@ -118,9 +118,7 @@ private:
 
   void addSearchResults(SearchBuffer& searchBuffer, HANDLE& primaryHandle, HANDLE searchHandle, LPCWSTR directory, WIN32_FIND_DATAW &searchData);
 
-  HANDLE savesSearch(HANDLE searchHandle, WIN32_FIND_DATAW &searchData);
-
-  HANDLE dataSearch(LPCWSTR absoluteFileName, int filenameOffset, HANDLE dataHandle, WIN32_FIND_DATAW &tempData,
+  HANDLE dataSearch(LPCWSTR absoluteFileName, size_t filenameOffset, HANDLE dataHandle, WIN32_FIND_DATAW &tempData,
                     FINDEX_INFO_LEVELS fInfoLevelId, FINDEX_SEARCH_OPS fSearchOp,
                     LPVOID lpSearchFilter, DWORD dwAdditionalFlags);
 

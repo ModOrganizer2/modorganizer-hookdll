@@ -179,3 +179,5 @@ extern CreateHardLinkA_type CreateHardLinkA_reroute;
 typedef DWORD (WINAPI *GetFullPathNameW_type)(LPCWSTR, DWORD, LPWSTR, LPWSTR*);
 extern GetFullPathNameW_type GetFullPathNameW_reroute;
 
+typedef int (STDAPICALLTYPE *SHFileOperationW_type)(LPSHFILEOPSTRUCTW);
+extern SHFileOperationW_type SHFileOperationW_reroute;
