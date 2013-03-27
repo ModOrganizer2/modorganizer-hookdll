@@ -181,3 +181,9 @@ extern GetFullPathNameW_type GetFullPathNameW_reroute;
 
 typedef int (STDAPICALLTYPE *SHFileOperationW_type)(LPSHFILEOPSTRUCTW);
 extern SHFileOperationW_type SHFileOperationW_reroute;
+
+typedef BOOL (WINAPI *GetFileVersionInfoExW_type)(DWORD, LPCWSTR, DWORD, DWORD, LPVOID);
+extern GetFileVersionInfoExW_type GetFileVersionInfoExW_reroute;
+
+typedef DWORD (WINAPI *GetFileVersionInfoSizeW_type)(LPCWSTR, LPDWORD);
+extern GetFileVersionInfoSizeW_type GetFileVersionInfoSizeW_reroute;
