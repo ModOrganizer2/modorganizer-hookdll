@@ -142,17 +142,6 @@ enum {
 
 char modName[MAX_PATH];
 
-// buffer for paths that we need to access often, so we don't have to convert every time
-struct {
-  std::wstring omoW;
-  std::string omoA;
-
-  std::wstring gameW;
-  std::string gameA;
-
-  std::wstring modsDirW;
-} s_Paths;
-
 
 BOOL CreateDirectoryRecursive(LPCWSTR lpPathName, LPSECURITY_ATTRIBUTES lpSecurityAttributes)
 {
@@ -567,8 +556,7 @@ BOOL WINAPI FindNextFileW_rep(HANDLE hFindFile, LPWIN32_FIND_DATAW lpFindFileDat
   PROFILE();
 
   BOOL result = GetNext(hFindFile, lpFindFileData);
-  while (result && ((wcscmp(lpFindFileData->cFileName, s_Paths.modsDirW.c_str()) == 0) ||
-                    (wcscmp(lpFindFileData->cFileName, L"profiles") == 0))) {
+  while (result && (wcscmp(lpFindFileData->cFileName, L"profiles") == 0)) {
     LOGDEBUG("hiding %ls from target process", lpFindFileData->cFileName);
     result = GetNext(hFindFile, lpFindFileData);
   }
@@ -1604,12 +1592,6 @@ std::vector<ApiHook*> hooks;
 
 void InitPaths()
 {
-  GameInfo &info = GameInfo::instance();
-  s_Paths.omoW = info.getOrganizerDirectory();
-  s_Paths.omoA = ToString(s_Paths.omoW, false);
-
-  s_Paths.gameW = info.getGameDirectory();
-  s_Paths.gameA = ToString(s_Paths.gameW, false);
 }
 
 
@@ -1839,13 +1821,13 @@ BOOL Init(int logLevel, const wchar_t *profileName)
   wchar_t filename[MAX_PATH];
   ::GetModuleFileNameW(NULL, filename, MAX_PATH);
 
-  wchar_t omoPath[MAX_PATH_UNICODE];
-  ::GetModuleFileNameW(dllModule, omoPath, MAX_PATH_UNICODE);
-  wchar_t *temp = wcsrchr(omoPath, L'\\');
+  wchar_t moPath[MAX_PATH_UNICODE];
+  ::GetModuleFileNameW(dllModule, moPath, MAX_PATH_UNICODE);
+  wchar_t *temp = wcsrchr(moPath, L'\\');
   if (temp != NULL) {
     *temp = L'\0';
   } else {
-    MessageBox(NULL, TEXT("failed to determine omo path"), TEXT("initialisation failed"), MB_OK);
+    MessageBox(NULL, TEXT("failed to determine mo path"), TEXT("initialisation failed"), MB_OK);
     return TRUE;
   }
 
@@ -1855,23 +1837,23 @@ BOOL Init(int logLevel, const wchar_t *profileName)
     {
       // if a file called mo_path exists in the same directory as the dll, it overrides the
       // path to the mod organizer
-      std::string hintFileName = ToString(omoPath, false);
+      std::string hintFileName = ToString(moPath, false);
       hintFileName.append("\\mo_path.txt");
       std::wifstream hintFile(hintFileName.c_str(), std::ifstream::in);
       if (hintFile.is_open()) {
-        hintFile.getline(omoPath, MAX_PATH_UNICODE);
+        hintFile.getline(moPath, MAX_PATH_UNICODE);
         hintFile.close();
       }
     }
 
-    iniName << omoPath << "\\modorganizer.ini";
+    iniName << moPath << "\\modorganizer.ini";
 
     wchar_t pathTemp[MAX_PATH];
     wchar_t gamePath[MAX_PATH];
     ::GetPrivateProfileStringW(L"General", L"gamePath", L"", pathTemp, MAX_PATH, iniName.str().c_str());
     Canonicalize(gamePath, iniDecode(ToString(pathTemp, false).c_str()).c_str());
 
-    if (!GameInfo::init(omoPath, gamePath)) {
+    if (!GameInfo::init(moPath, gamePath)) {
       throw std::runtime_error("game not found");
     }
   } catch (const std::exception &e) {
