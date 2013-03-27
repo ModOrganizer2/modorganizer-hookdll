@@ -103,6 +103,8 @@ CreateHardLinkW_type CreateHardLinkW_reroute = CreateHardLinkW;
 CreateHardLinkA_type CreateHardLinkA_reroute = CreateHardLinkA;
 GetFullPathNameW_type GetFullPathNameW_reroute = GetFullPathNameW;
 SHFileOperationW_type SHFileOperationW_reroute = SHFileOperationW;
+GetFileVersionInfoExW_type GetFileVersionInfoExW_reroute = GetFileVersionInfoExW;
+GetFileVersionInfoSizeW_type GetFileVersionInfoSizeW_reroute = GetFileVersionInfoSizeW;
 
 
 ModInfo *modInfo = NULL;
@@ -445,12 +447,6 @@ DWORD WINAPI GetFileAttributesW_rep(LPCWSTR lpFileName)
 
   int pathLen = baseName - lpFileName;
 
-/*  if (usedBSAList.find(ToLower(ToString(baseName, true))) != usedBSAList.end()) {
-    // hide bsa files loaded already through the resource archive list
-    LOGDEBUG("%ls hidden from the game", lpFileName);
-    return FALSE;
-  }*/
-
   bool rerouted = false;
 
   std::wstring rerouteFilename;
@@ -458,7 +454,6 @@ DWORD WINAPI GetFileAttributesW_rep(LPCWSTR lpFileName)
   if (bsaName != bsaMap.end()) {
     rerouteFilename = modInfo->getRerouteOpenExisting(std::wstring(lpFileName).substr(0, pathLen).append(ToWString(bsaName->second, true)).c_str(),
                                                       false, &rerouted);
-//    usedBSAList.insert(ToLower(bsaName->second));
   } else {
     rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName, false, &rerouted);
   }
@@ -1537,6 +1532,8 @@ DWORD WINAPI GetFullPathNameW_rep(LPCWSTR lpFileName, DWORD nBufferLength, LPWST
 
 int STDAPICALLTYPE SHFileOperationW_rep(LPSHFILEOPSTRUCTW lpFileOp)
 {
+  PROFILE();
+
   SHFILEOPSTRUCTW newOp;
   newOp.hwnd = lpFileOp->hwnd;
   newOp.wFunc = lpFileOp->wFunc;
@@ -1591,6 +1588,34 @@ int STDAPICALLTYPE SHFileOperationW_rep(LPSHFILEOPSTRUCTW lpFileOp)
   LOGDEBUG("sh file operation %d: %ls - %ls", lpFileOp->wFunc, lpFileOp->pFrom,
            lpFileOp->pTo != NULL ? lpFileOp->pTo : L"NULL");
   return SHFileOperationW_reroute(&newOp);
+}
+
+BOOL WINAPI GetFileVersionInfoExW_rep(DWORD dwFlags, LPCWSTR lptstrFilename, DWORD dwHandle, DWORD dwLen, LPVOID lpData)
+{
+  PROFILE();
+
+  WCHAR temp[MAX_PATH];
+  modInfo->getFullPathName(lptstrFilename, temp, MAX_PATH);
+
+  std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(temp, false, NULL);
+
+  LOGDEBUG("get file version ex w %ls -> %ls", lptstrFilename, rerouteFilename.c_str());
+
+  return GetFileVersionInfoExW_reroute(dwFlags, rerouteFilename.c_str(), dwHandle, dwLen, lpData);
+}
+
+DWORD WINAPI GetFileVersionInfoSizeW_rep(LPCWSTR lptstrFilename, LPDWORD lpdwHandle)
+{
+  PROFILE();
+
+  WCHAR temp[MAX_PATH];
+  modInfo->getFullPathName(lptstrFilename, temp, MAX_PATH);
+
+  std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(temp, false, NULL);
+
+  LOGDEBUG("get file version size %ls -> %ls", lptstrFilename, rerouteFilename.c_str());
+
+  return GetFileVersionInfoSizeW_reroute(rerouteFilename.c_str(), lpdwHandle);
 }
 
 
@@ -1664,6 +1689,8 @@ BOOL InitHooks()
     INITHOOK(TEXT("kernel32.dll"), CreateHardLinkW);
     INITHOOK(TEXT("kernel32.dll"), GetFullPathNameW);
     INITHOOK(TEXT("Shell32.dll"), SHFileOperationW);
+    INITHOOK(TEXT("version.dll"), GetFileVersionInfoExW);
+    INITHOOK(TEXT("version.dll"), GetFileVersionInfoSizeW);
 
     LOGDEBUG("all hooks installed");
 
