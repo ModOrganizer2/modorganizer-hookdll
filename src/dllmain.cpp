@@ -414,7 +414,8 @@ HANDLE WINAPI CreateFileA_rep(LPCSTR lpFileName,
   PROFILE();
 
   wchar_t temp[MAX_PATH];
-  mbstowcs(temp, lpFileName, MAX_PATH);
+  int converted = ::MultiByteToWideChar(GetACP(), 0, lpFileName, -1, temp, MAX_PATH);
+  if (converted >= MAX_PATH) temp[MAX_PATH - 1] = L'\0';
   return CreateFileW_rep(temp, dwDesiredAccess, dwShareMode, lpSecurityAttributes,
                      dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
 }
@@ -618,7 +619,8 @@ BOOL WINAPI DeleteFileA_rep(LPCSTR lpFileName)
 {
   PROFILE();
   wchar_t fileName[MAX_PATH];
-  mbstowcs(fileName, lpFileName, MAX_PATH);
+  int converted = ::MultiByteToWideChar(GetACP(), 0, lpFileName, -1, fileName, MAX_PATH);
+  if (converted >= MAX_PATH) fileName[MAX_PATH - 1] = L'\0';
 
   return DeleteFileW_rep(fileName);
 }
@@ -694,9 +696,11 @@ BOOL WINAPI MoveFileA_rep(LPCSTR lpExistingFileName, LPCSTR lpNewFileName)
 {
   PROFILE();
   wchar_t source[MAX_PATH];
-  mbstowcs(source, lpExistingFileName, MAX_PATH);
+  int converted = ::MultiByteToWideChar(GetACP(), 0, lpExistingFileName, -1, source, MAX_PATH);
+  if (converted >= MAX_PATH) source[MAX_PATH - 1] = L'\0';
   wchar_t destination[MAX_PATH];
-  mbstowcs(destination, lpNewFileName, MAX_PATH);
+  converted = ::MultiByteToWideChar(GetACP(), 0, lpNewFileName, -1, destination, MAX_PATH);
+  if (converted >= MAX_PATH) destination[MAX_PATH - 1] = L'\0';
 
   return MoveFileW_rep(source, destination);
 }
@@ -706,9 +710,12 @@ BOOL WINAPI MoveFileExA_rep(LPCSTR lpExistingFileName, LPCSTR lpNewFileName, DWO
 {
   PROFILE();
   wchar_t source[MAX_PATH];
-  mbstowcs(source, lpExistingFileName, MAX_PATH);
+  int converted = ::MultiByteToWideChar(GetACP(), 0, lpExistingFileName, -1, source, MAX_PATH);
+  if (converted >= MAX_PATH) source[MAX_PATH - 1] = L'\0';
+
   wchar_t destination[MAX_PATH];
-  mbstowcs(destination, lpNewFileName, MAX_PATH);
+  converted = ::MultiByteToWideChar(GetACP(), 0, lpNewFileName, -1, destination, MAX_PATH);
+  if (converted >= MAX_PATH) destination[MAX_PATH - 1] = L'\0';
 
   return MoveFileExW_rep(source, destination, dwFlags);
 }
