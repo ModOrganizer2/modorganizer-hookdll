@@ -396,7 +396,7 @@ void ModInfo::addModFile(const std::wstring &fileName)
   GetSystemTime(&now);
   SystemTimeToFileTime(&now, &time);
 
-  FilesOrigin& origin =  m_DirectoryStructure.getOriginByName(fileName);
+  FilesOrigin& origin = m_DirectoryStructure.getOriginByName(fileName);
   m_DirectoryStructure.insertFile(fileName, origin, time);
 }
 
@@ -408,13 +408,13 @@ void ModInfo::addOverwriteFile(const std::wstring &fileName)
     ++offset;
   }
 #ifdef DEBUG_LOG
-  LOGDEBUG("add mod file %ls (%ls)", fileName.c_str(), fileName.substr(offset).c_str());
+  LOGDEBUG("add overwrite file %ls (%ls)", fileName.c_str(), fileName.substr(offset).c_str());
 #endif // DEBUG_LOG
-  FILETIME time;
   SYSTEMTIME now;
   GetSystemTime(&now);
+  FILETIME time;
   SystemTimeToFileTime(&now, &time);
-  FilesOrigin &origin =  m_DirectoryStructure.getOriginByName(L"overwrite");
+  FilesOrigin &origin = m_DirectoryStructure.getOriginByName(L"overwrite");
   m_DirectoryStructure.insertFile(fileName.substr(offset), origin, time);
 }
 

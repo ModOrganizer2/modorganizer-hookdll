@@ -45,6 +45,8 @@ CONFIG(debug, debug|release) {
   DEFINES += DEBUG
 } else {
   LIBS += -L$$OUT_PWD/../shared/release -L$$OUT_PWD/../bsatk/release
+  QMAKE_CXXFLAGS += /Z7
+  QMAKE_LFLAGS += /DEBUG /INCREMENTAL:NO /OPT:REF /OPT:ICF
 }
 
 DEFINES += UNICODE _UNICODE
@@ -74,6 +76,7 @@ SRCDIR ~= s,/,$$QMAKE_DIR_SEP,g
 DSTDIR ~= s,/,$$QMAKE_DIR_SEP,g
 
 QMAKE_POST_LINK += xcopy /y /I $$quote($$SRCDIR\\hook*.dll) $$quote($$DSTDIR) $$escape_expand(\\n)
+QMAKE_POST_LINK += xcopy /y /I $$quote($$SRCDIR\\hook*.pdb) $$quote($$DSTDIR) $$escape_expand(\\n)
 
 OTHER_FILES += \
 		version.rc

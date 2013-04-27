@@ -76,11 +76,15 @@ private:
 };
 
 
+static const char *s_LastFunction = "";
+
+
 //#define PROFILE() TProfile __FUNCTION__ ## prof(__FUNCSIG__);
 //#define PROFILE_S() TProfile __FUNCTION__ ## prof(__FUNCSIG__);
 //#define PROFILEN(name) TProfile name ## prof(#name);
 //#define PROFILE() LOGDEBUG("%s", __FUNCSIG__)
-#define PROFILE()
+//#define PROFILE()
+#define PROFILE() s_LastFunction = __FUNCSIG__
 #define PROFILE_S()
 #define PROFILEN(name)
 

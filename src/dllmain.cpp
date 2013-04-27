@@ -32,6 +32,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include <regex>
 #include <algorithm>
 #include <Shlwapi.h>
+#include <DbgHelp.h>
 #include "apihook.h"
 #include "logger.h"
 #include "utility.h"
@@ -345,15 +346,6 @@ HANDLE WINAPI CreateFileW_rep(LPCWSTR lpFileName,
                               HANDLE hTemplateFile)
 {
   PROFILE();
-//  LPCWSTR baseName = GetBaseName(lpFileName);
-
-/*  if (usedBSAList.find(ToLower(ToString(baseName, true))) != usedBSAList.end()) {
-    // hide bsa files loaded already through the resource archive list
-    LOGDEBUG("%ls hidden from the game", lpFileName);
-    ::SetLastError(ERROR_FILE_NOT_FOUND);
-    return INVALID_HANDLE_VALUE;
-  }*/
-
   std::wstring rerouteFilename;
 
   WCHAR fullFileName[MAX_PATH];
@@ -387,7 +379,6 @@ HANDLE WINAPI CreateFileW_rep(LPCWSTR lpFileName,
       if (!rerouted) {
         LOGDEBUG("createfile bsa not rerouted: %ls -> %ls -> %ls", lpFileName, bsaPath.c_str(), rerouteFilename.c_str());
       }
-//      usedBSAList.insert(ToLower(bsaName->second));
     } else {
       rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName, false, &rerouted);
     }
@@ -1829,6 +1820,68 @@ BOOL SetUpBSAMap()
 }
 
 
+void RemoveHooks()
+{
+  for (std::vector<ApiHook*>::iterator iter = hooks.begin(); iter != hooks.end(); ++iter) {
+    delete *iter;
+  }
+  hooks.clear();
+  LOGDEBUG("hooks removed");
+}
+
+
+LONG WINAPI VEHandler(PEXCEPTION_POINTERS exceptionPtrs)
+{
+  Logger::Instance().error("Windows Exception (%x). Last hooked call: %s", exceptionPtrs->ExceptionRecord->ExceptionCode, s_LastFunction);
+  RemoveHooks();
+
+  typedef BOOL (WINAPI *FuncMiniDumpWriteDump)(HANDLE process, DWORD pid, HANDLE file, MINIDUMP_TYPE dumpType,
+                                               const PMINIDUMP_EXCEPTION_INFORMATION exceptionParam,
+                                               const PMINIDUMP_USER_STREAM_INFORMATION userStreamParam,
+                                               const PMINIDUMP_CALLBACK_INFORMATION callbackParam);
+  HMODULE dbgDLL = ::LoadLibraryW_reroute(L"dbghelp.dll");
+
+  static const int errorLen = 200;
+  char errorBuffer[errorLen + 1];
+  memset(errorBuffer, '\0', errorLen + 1);
+
+  if (dbgDLL) {
+    FuncMiniDumpWriteDump funcDump = (FuncMiniDumpWriteDump)::GetProcAddress(dbgDLL, "MiniDumpWriteDump");
+    if (funcDump) {
+      wchar_t dmpPath[MAX_PATH_UNICODE];
+      ::GetModuleFileNameW(dllModule, dmpPath, MAX_PATH_UNICODE);
+      wcscat(dmpPath, L".dmp");
+
+      HANDLE dumpFile = ::CreateFileW_reroute(dmpPath,
+                                     GENERIC_WRITE, FILE_SHARE_WRITE, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+      if (dumpFile != INVALID_HANDLE_VALUE) {
+        _MINIDUMP_EXCEPTION_INFORMATION exceptionInfo;
+        exceptionInfo.ThreadId = ::GetCurrentThreadId();
+        exceptionInfo.ExceptionPointers = exceptionPtrs;
+        exceptionInfo.ClientPointers = NULL;
+
+        BOOL success = funcDump(::GetCurrentProcess(), ::GetCurrentProcessId(), dumpFile, MiniDumpNormal, &exceptionInfo, NULL, NULL);
+
+        ::CloseHandle(dumpFile);
+        if (success) {
+          Logger::Instance().error("Crash dump created as %ls. Please send this file to the developer of MO", dmpPath);
+        } else {
+          Logger::Instance().error("No crash dump created, errorcode: %lu", ::GetLastError());
+        }
+      } else {
+        Logger::Instance().error("No crash dump created, failed to open %ls for writing", dmpPath);
+      }
+    } else {
+      Logger::Instance().error("No crash dump created, dbghelp.dll invalid");
+    }
+  } else {
+    Logger::Instance().error("No crash dump created, dbghelp.dll not found");
+  }
+
+  return EXCEPTION_CONTINUE_SEARCH;
+}
+
+
 BOOL Init(int logLevel, const wchar_t *profileName)
 {
   if (modInfo != NULL) {
@@ -1897,6 +1950,10 @@ BOOL Init(int logLevel, const wchar_t *profileName)
   Logger::Init(ToString(logFile, false).c_str(), logLevel);
 #endif
 
+
+  ::AddVectoredExceptionHandler(0, VEHandler);
+
+
   OSVERSIONINFOEX versionInfo;
   ZeroMemory(&versionInfo, sizeof(OSVERSIONINFOEX));
   versionInfo.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEX);
@@ -1937,16 +1994,6 @@ BOOL Init(int logLevel, const wchar_t *profileName)
   Logger::Instance().info("injection done");
   return TRUE;
 }
-
-void RemoveHooks()
-{
-  for (std::vector<ApiHook*>::iterator iter = hooks.begin(); iter != hooks.end(); ++iter) {
-    delete *iter;
-  }
-  hooks.clear();
-  LOGDEBUG("hooks removed");
-}
-
 
 BOOL APIENTRY DllMain(HMODULE module,
                       DWORD  reasonForCall,
