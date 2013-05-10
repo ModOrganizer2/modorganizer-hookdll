@@ -1205,7 +1205,6 @@ DWORD WINAPI GetPrivateProfileSectionW_rep(LPCWSTR lpAppName, LPWSTR lpReturnedS
 UINT WINAPI GetPrivateProfileIntA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, INT nDefault, LPCSTR lpFileName)
 {
   PROFILE();
-
   HookLock lock;
 
   if (lpFileName != NULL) {
