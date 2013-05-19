@@ -187,3 +187,6 @@ extern GetFileVersionInfoExW_type GetFileVersionInfoExW_reroute;
 
 typedef DWORD (WINAPI *GetFileVersionInfoSizeW_type)(LPCWSTR, LPDWORD);
 extern GetFileVersionInfoSizeW_type GetFileVersionInfoSizeW_reroute;
+
+typedef DWORD (WINAPI *GetModuleFileNameW_type)(HMODULE, LPWSTR, DWORD);
+extern GetModuleFileNameW_type GetModuleFileNameW_reroute;

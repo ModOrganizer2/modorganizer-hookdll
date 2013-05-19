@@ -102,6 +102,7 @@ public:
 
   std::wstring getRemovedLocation(const std::wstring &fileName);
 
+  std::wstring reverseReroute(const std::wstring &path, bool *rerouted = NULL);
 private:
 
   struct _LessThanName {

@@ -106,6 +106,7 @@ GetFullPathNameW_type GetFullPathNameW_reroute = GetFullPathNameW;
 SHFileOperationW_type SHFileOperationW_reroute = SHFileOperationW;
 GetFileVersionInfoExW_type GetFileVersionInfoExW_reroute = GetFileVersionInfoExW;
 GetFileVersionInfoSizeW_type GetFileVersionInfoSizeW_reroute = GetFileVersionInfoSizeW;
+GetModuleFileNameW_type GetModuleFileNameW_reroute = GetModuleFileNameW;
 
 
 ModInfo *modInfo = NULL;
@@ -124,6 +125,7 @@ static const int MAX_PATH_UNICODE = 256;
 
 HANDLE instanceMutex = INVALID_HANDLE_VALUE;
 HMODULE dllModule = NULL;
+PVOID exceptionHandler = NULL;
 
 int sLogLevel = 0;
 
@@ -499,7 +501,10 @@ HANDLE WINAPI FindFirstFileExW_rep(LPCWSTR lpFileName,
                                    LPVOID lpSearchFilter,
                                    DWORD dwAdditionalFlags)
 {
+  LOGDEBUG("a");
+  LOGDEBUG("%ls", lpFileName);
   PROFILE();
+
   if (HookLock::isLocked() || (lpFileName == NULL)) return FindFirstFileExW_reroute(lpFileName, fInfoLevelId, lpFindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags);
   LPCWSTR baseName = GetBaseName(lpFileName);
 
@@ -515,6 +520,7 @@ HANDLE WINAPI FindFirstFileExW_rep(LPCWSTR lpFileName,
     rerouteFilename = modInfo->getProfilePath().append(L"\\saves\\").append(sPos + wcslen(AppConfig::localSavePlaceholder()));
   }
   HANDLE result = modInfo->findStart(rerouteFilename.c_str(), fInfoLevelId, lpFindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags);
+  LOGDEBUG("b");
 
   if (result != INVALID_HANDLE_VALUE) {
     LOGDEBUG("findfirstfileex %ls: %ls (%x)", rerouteFilename.c_str(),
@@ -523,6 +529,7 @@ HANDLE WINAPI FindFirstFileExW_rep(LPCWSTR lpFileName,
   } else {
     LOGDEBUG("findfirstfileex %ls: nothing found (%d)", rerouteFilename.c_str(), ::GetLastError());
   }
+  LOGDEBUG("c");
 
   return result;
 }
@@ -1598,6 +1605,26 @@ DWORD WINAPI GetFileVersionInfoSizeW_rep(LPCWSTR lptstrFilename, LPDWORD lpdwHan
 }
 
 
+DWORD WINAPI GetModuleFileNameW_rep(HMODULE hModule, LPWSTR lpFilename, DWORD nSize)
+{
+  PROFILE();
+
+  DWORD res = GetModuleFileNameW_reroute(hModule, lpFilename, nSize);
+  if (res != 0) {
+    bool isRerouted = false;
+    std::wstring rerouted = modInfo->reverseReroute(lpFilename, &isRerouted);
+    if (isRerouted) {
+      LOGDEBUG("get module file name %ls -> %ls", lpFilename, rerouted.c_str());
+      _wcsnset(lpFilename, L'\0', nSize);
+      wcsncpy(lpFilename, rerouted.c_str(), (std::min<DWORD>)(rerouted.size(), nSize - 1));
+      LOGDEBUG("after: %ls", lpFilename);
+    }
+  }
+  return res;
+}
+
+
+
 std::vector<ApiHook*> hooks;
 
 
@@ -1661,6 +1688,7 @@ BOOL InitHooks()
     INITHOOK(TEXT("kernel32.dll"), CreateHardLinkA);
     INITHOOK(TEXT("kernel32.dll"), CreateHardLinkW);
     INITHOOK(TEXT("kernel32.dll"), GetFullPathNameW);
+    INITHOOK(TEXT("kernel32.dll"), GetModuleFileNameW);
     INITHOOK(TEXT("Shell32.dll"), SHFileOperationW);
     INITHOOK(TEXT("version.dll"), GetFileVersionInfoExW);
     INITHOOK(TEXT("version.dll"), GetFileVersionInfoSizeW);
@@ -1878,6 +1906,8 @@ LONG WINAPI VEHandler(PEXCEPTION_POINTERS exceptionPtrs)
     Logger::Instance().error("No crash dump created, dbghelp.dll not found");
   }
 
+  ::RemoveVectoredExceptionHandler(exceptionHandler);
+
   return EXCEPTION_CONTINUE_SEARCH;
 }
 
@@ -1951,7 +1981,7 @@ BOOL Init(int logLevel, const wchar_t *profileName)
 #endif
 
 
-  ::AddVectoredExceptionHandler(0, VEHandler);
+  exceptionHandler = ::AddVectoredExceptionHandler(0, VEHandler);
 
 
   OSVERSIONINFOEX versionInfo;
