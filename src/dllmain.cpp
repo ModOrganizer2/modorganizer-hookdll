@@ -32,6 +32,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include <regex>
 #include <algorithm>
 #include <Shlwapi.h>
+#include <DbgHelp.h>
 #include "apihook.h"
 #include "logger.h"
 #include "utility.h"
@@ -105,6 +106,7 @@ GetFullPathNameW_type GetFullPathNameW_reroute = GetFullPathNameW;
 SHFileOperationW_type SHFileOperationW_reroute = SHFileOperationW;
 GetFileVersionInfoExW_type GetFileVersionInfoExW_reroute = GetFileVersionInfoExW;
 GetFileVersionInfoSizeW_type GetFileVersionInfoSizeW_reroute = GetFileVersionInfoSizeW;
+GetModuleFileNameW_type GetModuleFileNameW_reroute = GetModuleFileNameW;
 
 
 ModInfo *modInfo = NULL;
@@ -123,6 +125,7 @@ static const int MAX_PATH_UNICODE = 256;
 
 HANDLE instanceMutex = INVALID_HANDLE_VALUE;
 HMODULE dllModule = NULL;
+PVOID exceptionHandler = NULL;
 
 int sLogLevel = 0;
 
@@ -345,15 +348,6 @@ HANDLE WINAPI CreateFileW_rep(LPCWSTR lpFileName,
                               HANDLE hTemplateFile)
 {
   PROFILE();
-//  LPCWSTR baseName = GetBaseName(lpFileName);
-
-/*  if (usedBSAList.find(ToLower(ToString(baseName, true))) != usedBSAList.end()) {
-    // hide bsa files loaded already through the resource archive list
-    LOGDEBUG("%ls hidden from the game", lpFileName);
-    ::SetLastError(ERROR_FILE_NOT_FOUND);
-    return INVALID_HANDLE_VALUE;
-  }*/
-
   std::wstring rerouteFilename;
 
   WCHAR fullFileName[MAX_PATH];
@@ -387,7 +381,6 @@ HANDLE WINAPI CreateFileW_rep(LPCWSTR lpFileName,
       if (!rerouted) {
         LOGDEBUG("createfile bsa not rerouted: %ls -> %ls -> %ls", lpFileName, bsaPath.c_str(), rerouteFilename.c_str());
       }
-//      usedBSAList.insert(ToLower(bsaName->second));
     } else {
       rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName, false, &rerouted);
     }
@@ -509,7 +502,10 @@ HANDLE WINAPI FindFirstFileExW_rep(LPCWSTR lpFileName,
                                    LPVOID lpSearchFilter,
                                    DWORD dwAdditionalFlags)
 {
+  LOGDEBUG("a");
+  LOGDEBUG("%ls", lpFileName);
   PROFILE();
+
   if (HookLock::isLocked() || (lpFileName == NULL)) return FindFirstFileExW_reroute(lpFileName, fInfoLevelId, lpFindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags);
   LPCWSTR baseName = GetBaseName(lpFileName);
 
@@ -525,6 +521,7 @@ HANDLE WINAPI FindFirstFileExW_rep(LPCWSTR lpFileName,
     rerouteFilename = modInfo->getProfilePath().append(L"\\saves\\").append(sPos + wcslen(AppConfig::localSavePlaceholder()));
   }
   HANDLE result = modInfo->findStart(rerouteFilename.c_str(), fInfoLevelId, lpFindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags);
+  LOGDEBUG("b");
 
   if (result != INVALID_HANDLE_VALUE) {
     LOGDEBUG("findfirstfileex %ls: %ls (%x)", rerouteFilename.c_str(),
@@ -533,6 +530,7 @@ HANDLE WINAPI FindFirstFileExW_rep(LPCWSTR lpFileName,
   } else {
     LOGDEBUG("findfirstfileex %ls: nothing found (%d)", rerouteFilename.c_str(), ::GetLastError());
   }
+  LOGDEBUG("c");
 
   return result;
 }
@@ -1613,6 +1611,26 @@ DWORD WINAPI GetFileVersionInfoSizeW_rep(LPCWSTR lptstrFilename, LPDWORD lpdwHan
 }
 
 
+DWORD WINAPI GetModuleFileNameW_rep(HMODULE hModule, LPWSTR lpFilename, DWORD nSize)
+{
+  PROFILE();
+
+  DWORD res = GetModuleFileNameW_reroute(hModule, lpFilename, nSize);
+  if (res != 0) {
+    bool isRerouted = false;
+    std::wstring rerouted = modInfo->reverseReroute(lpFilename, &isRerouted);
+    if (isRerouted) {
+      LOGDEBUG("get module file name %ls -> %ls", lpFilename, rerouted.c_str());
+      _wcsnset(lpFilename, L'\0', nSize);
+      wcsncpy(lpFilename, rerouted.c_str(), (std::min<DWORD>)(rerouted.size(), nSize - 1));
+      LOGDEBUG("after: %ls", lpFilename);
+    }
+  }
+  return res;
+}
+
+
+
 std::vector<ApiHook*> hooks;
 
 
@@ -1676,6 +1694,7 @@ BOOL InitHooks()
     INITHOOK(TEXT("kernel32.dll"), CreateHardLinkA);
     INITHOOK(TEXT("kernel32.dll"), CreateHardLinkW);
     INITHOOK(TEXT("kernel32.dll"), GetFullPathNameW);
+    INITHOOK(TEXT("kernel32.dll"), GetModuleFileNameW);
     INITHOOK(TEXT("Shell32.dll"), SHFileOperationW);
     INITHOOK(TEXT("version.dll"), GetFileVersionInfoExW);
     INITHOOK(TEXT("version.dll"), GetFileVersionInfoSizeW);
@@ -1835,6 +1854,70 @@ BOOL SetUpBSAMap()
 }
 
 
+void RemoveHooks()
+{
+  for (std::vector<ApiHook*>::iterator iter = hooks.begin(); iter != hooks.end(); ++iter) {
+    delete *iter;
+  }
+  hooks.clear();
+  LOGDEBUG("hooks removed");
+}
+
+
+LONG WINAPI VEHandler(PEXCEPTION_POINTERS exceptionPtrs)
+{
+  Logger::Instance().error("Windows Exception (%x). Last hooked call: %s", exceptionPtrs->ExceptionRecord->ExceptionCode, s_LastFunction);
+  RemoveHooks();
+
+  typedef BOOL (WINAPI *FuncMiniDumpWriteDump)(HANDLE process, DWORD pid, HANDLE file, MINIDUMP_TYPE dumpType,
+                                               const PMINIDUMP_EXCEPTION_INFORMATION exceptionParam,
+                                               const PMINIDUMP_USER_STREAM_INFORMATION userStreamParam,
+                                               const PMINIDUMP_CALLBACK_INFORMATION callbackParam);
+  HMODULE dbgDLL = ::LoadLibraryW_reroute(L"dbghelp.dll");
+
+  static const int errorLen = 200;
+  char errorBuffer[errorLen + 1];
+  memset(errorBuffer, '\0', errorLen + 1);
+
+  if (dbgDLL) {
+    FuncMiniDumpWriteDump funcDump = (FuncMiniDumpWriteDump)::GetProcAddress(dbgDLL, "MiniDumpWriteDump");
+    if (funcDump) {
+      wchar_t dmpPath[MAX_PATH_UNICODE];
+      ::GetModuleFileNameW(dllModule, dmpPath, MAX_PATH_UNICODE);
+      wcscat(dmpPath, L".dmp");
+
+      HANDLE dumpFile = ::CreateFileW_reroute(dmpPath,
+                                     GENERIC_WRITE, FILE_SHARE_WRITE, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+      if (dumpFile != INVALID_HANDLE_VALUE) {
+        _MINIDUMP_EXCEPTION_INFORMATION exceptionInfo;
+        exceptionInfo.ThreadId = ::GetCurrentThreadId();
+        exceptionInfo.ExceptionPointers = exceptionPtrs;
+        exceptionInfo.ClientPointers = NULL;
+
+        BOOL success = funcDump(::GetCurrentProcess(), ::GetCurrentProcessId(), dumpFile, MiniDumpNormal, &exceptionInfo, NULL, NULL);
+
+        ::CloseHandle(dumpFile);
+        if (success) {
+          Logger::Instance().error("Crash dump created as %ls. Please send this file to the developer of MO", dmpPath);
+        } else {
+          Logger::Instance().error("No crash dump created, errorcode: %lu", ::GetLastError());
+        }
+      } else {
+        Logger::Instance().error("No crash dump created, failed to open %ls for writing", dmpPath);
+      }
+    } else {
+      Logger::Instance().error("No crash dump created, dbghelp.dll invalid");
+    }
+  } else {
+    Logger::Instance().error("No crash dump created, dbghelp.dll not found");
+  }
+
+  ::RemoveVectoredExceptionHandler(exceptionHandler);
+
+  return EXCEPTION_CONTINUE_SEARCH;
+}
+
+
 BOOL Init(int logLevel, const wchar_t *profileName)
 {
   if (modInfo != NULL) {
@@ -1903,6 +1986,10 @@ BOOL Init(int logLevel, const wchar_t *profileName)
   Logger::Init(ToString(logFile, false).c_str(), logLevel);
 #endif
 
+
+  exceptionHandler = ::AddVectoredExceptionHandler(0, VEHandler);
+
+
   OSVERSIONINFOEX versionInfo;
   ZeroMemory(&versionInfo, sizeof(OSVERSIONINFOEX));
   versionInfo.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEX);
@@ -1943,16 +2030,6 @@ BOOL Init(int logLevel, const wchar_t *profileName)
   Logger::Instance().info("injection done");
   return TRUE;
 }
-
-void RemoveHooks()
-{
-  for (std::vector<ApiHook*>::iterator iter = hooks.begin(); iter != hooks.end(); ++iter) {
-    delete *iter;
-  }
-  hooks.clear();
-  LOGDEBUG("hooks removed");
-}
-
 
 BOOL APIENTRY DllMain(HMODULE module,
                       DWORD  reasonForCall,

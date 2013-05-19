@@ -255,9 +255,57 @@ bool ModInfo::detectOverwriteChange()
 }
 
 
+std::wstring ModInfo::reverseReroute(const std::wstring &path, bool *rerouted)
+{
+  std::wstring result;
+
+  wchar_t temp[MAX_PATH];
+  Canonicalize(temp, path.c_str());
+  std::wstring modsDir = GameInfo::instance().getModsDir();
+  std::wstring overwriteDir = GameInfo::instance().getOverwriteDir();
+  m_CurrentDirectory.clear();
+  if (StartsWith(temp, modsDir.c_str())) {
+    wchar_t *relCwd = temp + modsDir.length();
+    if (*relCwd != L'\0') relCwd += 1;
+    // skip the mod name
+    relCwd = wcschr(relCwd, L'\\');
+
+    if (relCwd != NULL) {
+      Canonicalize(temp, GameInfo::instance().getGameDirectory().append(L"\\data\\").append(relCwd).c_str());
+      result.assign(temp);
+    } else {
+      result = m_DataPathAbsoluteW;
+    }
+
+    if (rerouted != NULL) *rerouted = true;
+  } else if (StartsWith(temp, overwriteDir.c_str())) {
+    wchar_t *relCwd = temp + overwriteDir.length();
+    if (*relCwd != L'\0') relCwd += 1;
+    Canonicalize(temp, GameInfo::instance().getGameDirectory().append(L"\\data\\").append(relCwd).c_str());
+    result.assign(temp);
+
+    if (rerouted != NULL) *rerouted = true;
+  } else if (StartsWith(temp, m_DataPathAbsoluteW.c_str()) && !FileExists_reroute(temp)) {
+    result.assign(temp);
+    if (rerouted != NULL) *rerouted = true;
+  } else {
+    if (rerouted != NULL) *rerouted = false;
+  }
+  return result;
+}
+
+
 bool ModInfo::setCwd(const std::wstring &currentDirectory)
 {
-  wchar_t temp[MAX_PATH];
+  bool rerouted = false;
+  m_CurrentDirectory = reverseReroute(currentDirectory, &rerouted);
+  if (!rerouted) {
+    m_CurrentDirectory.clear();
+  }
+  return rerouted;
+
+
+/*  wchar_t temp[MAX_PATH];
   Canonicalize(temp, currentDirectory.c_str());
   std::wstring modsDir = GameInfo::instance().getModsDir();
   std::wstring overwriteDir = GameInfo::instance().getOverwriteDir();
@@ -287,7 +335,7 @@ bool ModInfo::setCwd(const std::wstring &currentDirectory)
     m_CurrentDirectory.assign(temp);
     return true;
   }
-  return false;
+  return false;*/
 }
 
 
@@ -396,7 +444,7 @@ void ModInfo::addModFile(const std::wstring &fileName)
   GetSystemTime(&now);
   SystemTimeToFileTime(&now, &time);
 
-  FilesOrigin& origin =  m_DirectoryStructure.getOriginByName(fileName);
+  FilesOrigin& origin = m_DirectoryStructure.getOriginByName(fileName);
   m_DirectoryStructure.insertFile(fileName, origin, time);
 }
 
@@ -408,13 +456,13 @@ void ModInfo::addOverwriteFile(const std::wstring &fileName)
     ++offset;
   }
 #ifdef DEBUG_LOG
-  LOGDEBUG("add mod file %ls (%ls)", fileName.c_str(), fileName.substr(offset).c_str());
+  LOGDEBUG("add overwrite file %ls (%ls)", fileName.c_str(), fileName.substr(offset).c_str());
 #endif // DEBUG_LOG
-  FILETIME time;
   SYSTEMTIME now;
   GetSystemTime(&now);
+  FILETIME time;
   SystemTimeToFileTime(&now, &time);
-  FilesOrigin &origin =  m_DirectoryStructure.getOriginByName(L"overwrite");
+  FilesOrigin &origin = m_DirectoryStructure.getOriginByName(L"overwrite");
   m_DirectoryStructure.insertFile(fileName.substr(offset), origin, time);
 }
 
