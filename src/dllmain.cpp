@@ -423,6 +423,7 @@ BOOL WINAPI CloseHandle_rep(HANDLE hObject)
 DWORD WINAPI GetFileAttributesW_rep(LPCWSTR lpFileName)
 {
   PROFILE();
+
   if ((lpFileName == NULL) || (lpFileName[0] == L'\0')) {
     return GetFileAttributesW_reroute(lpFileName);
   }
@@ -502,8 +503,6 @@ HANDLE WINAPI FindFirstFileExW_rep(LPCWSTR lpFileName,
                                    LPVOID lpSearchFilter,
                                    DWORD dwAdditionalFlags)
 {
-  LOGDEBUG("a");
-  LOGDEBUG("%ls", lpFileName);
   PROFILE();
 
   if (HookLock::isLocked() || (lpFileName == NULL)) return FindFirstFileExW_reroute(lpFileName, fInfoLevelId, lpFindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags);
@@ -521,7 +520,6 @@ HANDLE WINAPI FindFirstFileExW_rep(LPCWSTR lpFileName,
     rerouteFilename = modInfo->getProfilePath().append(L"\\saves\\").append(sPos + wcslen(AppConfig::localSavePlaceholder()));
   }
   HANDLE result = modInfo->findStart(rerouteFilename.c_str(), fInfoLevelId, lpFindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags);
-  LOGDEBUG("b");
 
   if (result != INVALID_HANDLE_VALUE) {
     LOGDEBUG("findfirstfileex %ls: %ls (%x)", rerouteFilename.c_str(),
@@ -530,7 +528,6 @@ HANDLE WINAPI FindFirstFileExW_rep(LPCWSTR lpFileName,
   } else {
     LOGDEBUG("findfirstfileex %ls: nothing found (%d)", rerouteFilename.c_str(), ::GetLastError());
   }
-  LOGDEBUG("c");
 
   return result;
 }
@@ -1621,9 +1618,13 @@ DWORD WINAPI GetModuleFileNameW_rep(HMODULE hModule, LPWSTR lpFilename, DWORD nS
     std::wstring rerouted = modInfo->reverseReroute(lpFilename, &isRerouted);
     if (isRerouted) {
       LOGDEBUG("get module file name %ls -> %ls", lpFilename, rerouted.c_str());
-      _wcsnset(lpFilename, L'\0', nSize);
-      wcsncpy(lpFilename, rerouted.c_str(), (std::min<DWORD>)(rerouted.size(), nSize - 1));
-      LOGDEBUG("after: %ls", lpFilename);
+      DWORD len = (std::min<DWORD>)(rerouted.size(), nSize - 1);
+      _wcsnset(lpFilename, L'\0', len + 1);
+      wcsncpy(lpFilename, rerouted.c_str(), len);
+      res = len;
+      if (rerouted.size() > nSize) {
+        ::SetLastError(ERROR_INSUFFICIENT_BUFFER);
+      }
     }
   }
   return res;
@@ -1866,6 +1867,12 @@ void RemoveHooks()
 
 LONG WINAPI VEHandler(PEXCEPTION_POINTERS exceptionPtrs)
 {
+  if ((exceptionPtrs->ExceptionRecord->ExceptionFlags != EXCEPTION_NONCONTINUABLE) ||
+      (exceptionPtrs->ExceptionRecord->ExceptionCode == 0xe06d7363)) {
+    // don't want to break on non-critical exceptions. 0xe06d7363 indicates a C++ exception. why are those marked non-continuable?
+    return EXCEPTION_CONTINUE_SEARCH;
+  }
+
   Logger::Instance().error("Windows Exception (%x). Last hooked call: %s", exceptionPtrs->ExceptionRecord->ExceptionCode, s_LastFunction);
   RemoveHooks();
 

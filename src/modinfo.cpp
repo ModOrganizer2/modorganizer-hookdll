@@ -258,20 +258,18 @@ bool ModInfo::detectOverwriteChange()
 std::wstring ModInfo::reverseReroute(const std::wstring &path, bool *rerouted)
 {
   std::wstring result;
-
   wchar_t temp[MAX_PATH];
   Canonicalize(temp, path.c_str());
   std::wstring modsDir = GameInfo::instance().getModsDir();
   std::wstring overwriteDir = GameInfo::instance().getOverwriteDir();
-  m_CurrentDirectory.clear();
   if (StartsWith(temp, modsDir.c_str())) {
-    wchar_t *relCwd = temp + modsDir.length();
-    if (*relCwd != L'\0') relCwd += 1;
+    wchar_t *relPath = temp + modsDir.length();
+    if (*relPath != L'\0') relPath += 1;
     // skip the mod name
-    relCwd = wcschr(relCwd, L'\\');
+    relPath = wcschr(relPath, L'\\');
 
-    if (relCwd != NULL) {
-      Canonicalize(temp, GameInfo::instance().getGameDirectory().append(L"\\data\\").append(relCwd).c_str());
+    if (relPath != NULL) {
+      Canonicalize(temp, GameInfo::instance().getGameDirectory().append(L"\\data\\").append(relPath).c_str());
       result.assign(temp);
     } else {
       result = m_DataPathAbsoluteW;
@@ -279,16 +277,14 @@ std::wstring ModInfo::reverseReroute(const std::wstring &path, bool *rerouted)
 
     if (rerouted != NULL) *rerouted = true;
   } else if (StartsWith(temp, overwriteDir.c_str())) {
-    wchar_t *relCwd = temp + overwriteDir.length();
-    if (*relCwd != L'\0') relCwd += 1;
-    Canonicalize(temp, GameInfo::instance().getGameDirectory().append(L"\\data\\").append(relCwd).c_str());
+    wchar_t *relPath = temp + overwriteDir.length();
+    if (*relPath != L'\0') relPath += 1;
+    Canonicalize(temp, GameInfo::instance().getGameDirectory().append(L"\\data\\").append(relPath).c_str());
     result.assign(temp);
 
     if (rerouted != NULL) *rerouted = true;
-  } else if (StartsWith(temp, m_DataPathAbsoluteW.c_str()) && !FileExists_reroute(temp)) {
-    result.assign(temp);
-    if (rerouted != NULL) *rerouted = true;
   } else {
+    result.assign(temp);
     if (rerouted != NULL) *rerouted = false;
   }
   return result;
@@ -299,10 +295,11 @@ bool ModInfo::setCwd(const std::wstring &currentDirectory)
 {
   bool rerouted = false;
   m_CurrentDirectory = reverseReroute(currentDirectory, &rerouted);
-  if (!rerouted) {
+  if (!rerouted && FileExists_reroute(m_CurrentDirectory.c_str())) {
+    // regular un-rerouted setcwd
     m_CurrentDirectory.clear();
   }
-  return rerouted;
+  return m_CurrentDirectory.empty();
 
 
 /*  wchar_t temp[MAX_PATH];
