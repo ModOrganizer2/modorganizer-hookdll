@@ -100,6 +100,7 @@ public:
 
   std::wstring getRemovedLocation(const std::wstring &fileName);
 
+  std::wstring reverseReroute(const std::wstring &path, bool *rerouted = NULL);
 private:
 
   struct _LessThanName {
@@ -132,7 +133,7 @@ private:
 
   struct RemovalInfo {
     RemovalInfo() : fileName(), origin(-1), time(0) {}
-    RemovalInfo(const RemovalInfo &reference) : fileName(reference.fileName), origin(reference.origin), time(reference.time) { LOGDEBUG("copy: %ls", fileName.c_str()); }
+    RemovalInfo(const RemovalInfo &reference) : fileName(reference.fileName), origin(reference.origin), time(reference.time) { }
     std::wstring fileName;
     int origin;
     time_t time;
