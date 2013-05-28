@@ -103,6 +103,7 @@ CopyFileW_type CopyFileW_reroute = CopyFileW;
 CreateHardLinkW_type CreateHardLinkW_reroute = CreateHardLinkW;
 CreateHardLinkA_type CreateHardLinkA_reroute = CreateHardLinkA;
 GetFullPathNameW_type GetFullPathNameW_reroute = GetFullPathNameW;
+SHFileOperationA_type SHFileOperationA_reroute = SHFileOperationA;
 SHFileOperationW_type SHFileOperationW_reroute = SHFileOperationW;
 GetFileVersionInfoExW_type GetFileVersionInfoExW_reroute = GetFileVersionInfoExW;
 GetFileVersionInfoSizeW_type GetFileVersionInfoSizeW_reroute = GetFileVersionInfoSizeW;
@@ -1519,9 +1520,75 @@ DWORD WINAPI GetFullPathNameW_rep(LPCWSTR lpFileName, DWORD nBufferLength, LPWST
 }
 
 
+int STDAPICALLTYPE SHFileOperationA_rep(LPSHFILEOPSTRUCTA lpFileOp)
+{
+  PROFILE();
+  HookLock lock;
+
+  SHFILEOPSTRUCTA newOp;
+  newOp.hwnd = lpFileOp->hwnd;
+  newOp.wFunc = lpFileOp->wFunc;
+  newOp.fFlags = lpFileOp->fFlags;
+  newOp.fAnyOperationsAborted = lpFileOp->fAnyOperationsAborted;
+  newOp.hNameMappings = lpFileOp->hNameMappings;
+  newOp.lpszProgressTitle = lpFileOp->lpszProgressTitle;
+  std::vector<char> newFrom;
+  LPCSTR pos = lpFileOp->pFrom;
+  for (;;) {
+    if (*pos == '\0') break;
+
+    std::string rerouted = modInfo->getRerouteOpenExisting(pos);
+    newFrom.insert(newFrom.end(), rerouted.begin(), rerouted.end());
+    newFrom.push_back('\0');
+    pos += strlen(pos) + 1;
+  }
+  newFrom.push_back('\0');
+
+  newOp.pFrom = &newFrom[0];
+
+  std::vector<char> newTo;
+  if (lpFileOp->pTo != NULL) {
+    pos = lpFileOp->pTo;
+    for (;;) {
+      if (*pos == L'\0') break;
+
+      std::string rerouteFilename;
+      if ((strlen(pos) == modInfo->getDataPathA().length()) &&
+          (strcmp(pos, modInfo->getDataPathA().c_str()) == 0)) {
+        rerouteFilename = ToString(GameInfo::instance().getOverwriteDir(), false);
+      } else if (StartsWith(pos, modInfo->getDataPathA().c_str()) && !::FileExists(pos)) {
+        std::ostringstream temp;
+        temp << ToString(GameInfo::instance().getOverwriteDir(), false) << "\\" << (pos + modInfo->getDataPathA().length());
+        rerouteFilename = temp.str();
+
+        std::string targetDirectory = rerouteFilename.substr(0, rerouteFilename.find_last_of("\\/"));
+        CreateDirectoryRecursive(ToWString(targetDirectory, false).c_str(), NULL);
+        modInfo->addOverwriteFile(ToWString(rerouteFilename, false));
+      } else {
+        rerouteFilename = modInfo->getRerouteOpenExisting(pos);
+      }
+      newTo.insert(newTo.end(), rerouteFilename.begin(), rerouteFilename.end());
+      newTo.push_back('\0');
+      pos += strlen(pos) + 1;
+    }
+    newTo.push_back('\0');
+
+    newOp.pTo = &newTo[0];
+  } else {
+    newOp.pTo = NULL;
+  }
+
+  LOGDEBUG("sh file operation a %d: %s - %s", newOp.wFunc, newOp.pFrom,
+           newOp.pTo != NULL ? newOp.pTo : "NULL");
+  return SHFileOperationA_reroute(&newOp);
+}
+
 int STDAPICALLTYPE SHFileOperationW_rep(LPSHFILEOPSTRUCTW lpFileOp)
 {
   PROFILE();
+
+  // avoid recursive call from SHFileOperationA
+  if (HookLock::isLocked()) return SHFileOperationW_reroute(lpFileOp);
 
   SHFILEOPSTRUCTW newOp;
   newOp.hwnd = lpFileOp->hwnd;
@@ -1556,7 +1623,7 @@ int STDAPICALLTYPE SHFileOperationW_rep(LPSHFILEOPSTRUCTW lpFileOp)
         rerouteFilename = GameInfo::instance().getOverwriteDir();
       } else if (StartsWith(pos, modInfo->getDataPathW().c_str()) && !::FileExists(pos)) {
         std::wostringstream temp;
-        temp << GameInfo::instance().getOverwriteDir() << "\\" << (pos + modInfo->getDataPathW().length());
+        temp << GameInfo::instance().getOverwriteDir() << L"\\" << (pos + modInfo->getDataPathW().length());
         rerouteFilename = temp.str();
 
         std::wstring targetDirectory = rerouteFilename.substr(0, rerouteFilename.find_last_of(L"\\/"));
@@ -1576,7 +1643,7 @@ int STDAPICALLTYPE SHFileOperationW_rep(LPSHFILEOPSTRUCTW lpFileOp)
     newOp.pTo = NULL;
   }
 
-  LOGDEBUG("sh file operation %d: %ls - %ls", newOp.wFunc, newOp.pFrom,
+  LOGDEBUG("sh file operation w %d: %ls - %ls", newOp.wFunc, newOp.pFrom,
            newOp.pTo != NULL ? newOp.pTo : L"NULL");
   return SHFileOperationW_reroute(&newOp);
 }
@@ -1698,6 +1765,7 @@ BOOL InitHooks()
     INITHOOK(TEXT("kernel32.dll"), CreateHardLinkW);
     INITHOOK(TEXT("kernel32.dll"), GetFullPathNameW);
     INITHOOK(TEXT("kernel32.dll"), GetModuleFileNameW);
+    INITHOOK(TEXT("Shell32.dll"), SHFileOperationA);
     INITHOOK(TEXT("Shell32.dll"), SHFileOperationW);
     INITHOOK(TEXT("version.dll"), GetFileVersionInfoExW);
     INITHOOK(TEXT("version.dll"), GetFileVersionInfoSizeW);
