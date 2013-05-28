@@ -299,7 +299,7 @@ bool ModInfo::setCwd(const std::wstring &currentDirectory)
     // regular un-rerouted setcwd
     m_CurrentDirectory.clear();
   }
-  return m_CurrentDirectory.empty();
+  return !m_CurrentDirectory.empty();
 
 
 /*  wchar_t temp[MAX_PATH];

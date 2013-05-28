@@ -1530,7 +1530,6 @@ int STDAPICALLTYPE SHFileOperationW_rep(LPSHFILEOPSTRUCTW lpFileOp)
   newOp.fAnyOperationsAborted = lpFileOp->fAnyOperationsAborted;
   newOp.hNameMappings = lpFileOp->hNameMappings;
   newOp.lpszProgressTitle = lpFileOp->lpszProgressTitle;
-
   std::vector<wchar_t> newFrom;
   LPCWSTR pos = lpFileOp->pFrom;
   for (;;) {
@@ -1551,9 +1550,11 @@ int STDAPICALLTYPE SHFileOperationW_rep(LPSHFILEOPSTRUCTW lpFileOp)
     for (;;) {
       if (*pos == L'\0') break;
 
-      std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(pos);
-
-      if (StartsWith(pos, modInfo->getDataPathW().c_str()) && !::FileExists(pos)) {
+      std::wstring rerouteFilename;
+      if ((wcslen(pos) == modInfo->getDataPathW().length()) &&
+          (wcscmp(pos, modInfo->getDataPathW().c_str()) == 0)) {
+        rerouteFilename = GameInfo::instance().getOverwriteDir();
+      } else if (StartsWith(pos, modInfo->getDataPathW().c_str()) && !::FileExists(pos)) {
         std::wostringstream temp;
         temp << GameInfo::instance().getOverwriteDir() << "\\" << (pos + modInfo->getDataPathW().length());
         rerouteFilename = temp.str();
@@ -1561,8 +1562,9 @@ int STDAPICALLTYPE SHFileOperationW_rep(LPSHFILEOPSTRUCTW lpFileOp)
         std::wstring targetDirectory = rerouteFilename.substr(0, rerouteFilename.find_last_of(L"\\/"));
         CreateDirectoryRecursive(targetDirectory.c_str(), NULL);
         modInfo->addOverwriteFile(rerouteFilename);
+      } else {
+        rerouteFilename = modInfo->getRerouteOpenExisting(pos);
       }
-
       newTo.insert(newTo.end(), rerouteFilename.begin(), rerouteFilename.end());
       newTo.push_back(L'\0');
       pos += wcslen(pos) + 1;
@@ -1574,8 +1576,8 @@ int STDAPICALLTYPE SHFileOperationW_rep(LPSHFILEOPSTRUCTW lpFileOp)
     newOp.pTo = NULL;
   }
 
-  LOGDEBUG("sh file operation %d: %ls - %ls", lpFileOp->wFunc, lpFileOp->pFrom,
-           lpFileOp->pTo != NULL ? lpFileOp->pTo : L"NULL");
+  LOGDEBUG("sh file operation %d: %ls - %ls", newOp.wFunc, newOp.pFrom,
+           newOp.pTo != NULL ? newOp.pTo : L"NULL");
   return SHFileOperationW_reroute(&newOp);
 }
 
@@ -1867,9 +1869,15 @@ void RemoveHooks()
 
 LONG WINAPI VEHandler(PEXCEPTION_POINTERS exceptionPtrs)
 {
-  if ((exceptionPtrs->ExceptionRecord->ExceptionFlags != EXCEPTION_NONCONTINUABLE) ||
+/*  if ((exceptionPtrs->ExceptionRecord->ExceptionFlags != EXCEPTION_NONCONTINUABLE) ||
       (exceptionPtrs->ExceptionRecord->ExceptionCode == 0xe06d7363)) {
     // don't want to break on non-critical exceptions. 0xe06d7363 indicates a C++ exception. why are those marked non-continuable?
+    return EXCEPTION_CONTINUE_SEARCH;
+  }*/
+
+  if (exceptionPtrs->ExceptionRecord->ExceptionCode != 0xC0000005) {
+    // don't want to break on non-critical errors. The above block didn't work well, crashes
+    // happened for exceptions that wouldn't have been a problem
     return EXCEPTION_CONTINUE_SEARCH;
   }
 
@@ -1941,9 +1949,6 @@ BOOL Init(int logLevel, const wchar_t *profileName)
     return TRUE;
   }
 
-  wchar_t filename[MAX_PATH];
-  ::GetModuleFileNameW(NULL, filename, MAX_PATH);
-
   wchar_t moPath[MAX_PATH_UNICODE];
   ::GetModuleFileNameW(dllModule, moPath, MAX_PATH_UNICODE);
   wchar_t *temp = wcsrchr(moPath, L'\\');
@@ -1993,16 +1998,24 @@ BOOL Init(int logLevel, const wchar_t *profileName)
   Logger::Init(ToString(logFile, false).c_str(), logLevel);
 #endif
 
-
   exceptionHandler = ::AddVectoredExceptionHandler(0, VEHandler);
-
 
   OSVERSIONINFOEX versionInfo;
   ZeroMemory(&versionInfo, sizeof(OSVERSIONINFOEX));
   versionInfo.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEX);
   ::GetVersionEx((OSVERSIONINFO*)&versionInfo);
   Logger::Instance().info("Windows %d.%d (%s)", versionInfo.dwMajorVersion, versionInfo.dwMinorVersion, versionInfo.wProductType == VER_NT_WORKSTATION ? "workstation" : "server");
+  ::GetModuleFileNameW(dllModule, moPath, MAX_PATH_UNICODE);
+  VS_FIXEDFILEINFO version = GetFileVersion(moPath);
+  Logger::Instance().info("hook.dll v%d.%d.%d",
+                          version.dwFileVersionMS >> 16,
+                          version.dwFileVersionMS & 0xFFFF,
+                          version.dwFileVersionLS >> 16);
+
   Logger::Instance().info("Code page: %ld", GetACP());
+
+  wchar_t filename[MAX_PATH];
+  ::GetModuleFileNameW(NULL, filename, MAX_PATH);
   Logger::Instance().info("injecting to %ls", filename);
 
   if (!SetUp(iniName.str(), profileName)) {
@@ -2037,6 +2050,7 @@ BOOL Init(int logLevel, const wchar_t *profileName)
   Logger::Instance().info("injection done");
   return TRUE;
 }
+
 
 BOOL APIENTRY DllMain(HMODULE module,
                       DWORD  reasonForCall,
