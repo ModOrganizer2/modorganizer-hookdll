@@ -74,8 +74,6 @@ public:
 
   std::wstring getProfileName() const { return m_ProfileName; }
   std::wstring getProfilePath() const { return m_ProfilePath; }
-  //std::string getIniFilePathA() const { return m_IniFilePathA; }
-  //std::wstring getIniFilePathW() const { return m_IniFilePathW; }
 
   const std::string &getTweakedIniA() const;
   const std::wstring &getTweakedIniW() const;

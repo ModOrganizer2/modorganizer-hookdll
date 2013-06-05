@@ -103,6 +103,7 @@ CopyFileW_type CopyFileW_reroute = CopyFileW;
 CreateHardLinkW_type CreateHardLinkW_reroute = CreateHardLinkW;
 CreateHardLinkA_type CreateHardLinkA_reroute = CreateHardLinkA;
 GetFullPathNameW_type GetFullPathNameW_reroute = GetFullPathNameW;
+SHFileOperationA_type SHFileOperationA_reroute = SHFileOperationA;
 SHFileOperationW_type SHFileOperationW_reroute = SHFileOperationW;
 GetFileVersionInfoExW_type GetFileVersionInfoExW_reroute = GetFileVersionInfoExW;
 GetFileVersionInfoSizeW_type GetFileVersionInfoSizeW_reroute = GetFileVersionInfoSizeW;
@@ -1543,9 +1544,75 @@ DWORD WINAPI GetFullPathNameW_rep(LPCWSTR lpFileName, DWORD nBufferLength, LPWST
 }
 
 
+int STDAPICALLTYPE SHFileOperationA_rep(LPSHFILEOPSTRUCTA lpFileOp)
+{
+  PROFILE();
+  HookLock lock;
+
+  SHFILEOPSTRUCTA newOp;
+  newOp.hwnd = lpFileOp->hwnd;
+  newOp.wFunc = lpFileOp->wFunc;
+  newOp.fFlags = lpFileOp->fFlags;
+  newOp.fAnyOperationsAborted = lpFileOp->fAnyOperationsAborted;
+  newOp.hNameMappings = lpFileOp->hNameMappings;
+  newOp.lpszProgressTitle = lpFileOp->lpszProgressTitle;
+  std::vector<char> newFrom;
+  LPCSTR pos = lpFileOp->pFrom;
+  for (;;) {
+    if (*pos == '\0') break;
+
+    std::string rerouted = modInfo->getRerouteOpenExisting(pos);
+    newFrom.insert(newFrom.end(), rerouted.begin(), rerouted.end());
+    newFrom.push_back('\0');
+    pos += strlen(pos) + 1;
+  }
+  newFrom.push_back('\0');
+
+  newOp.pFrom = &newFrom[0];
+
+  std::vector<char> newTo;
+  if (lpFileOp->pTo != NULL) {
+    pos = lpFileOp->pTo;
+    for (;;) {
+      if (*pos == L'\0') break;
+
+      std::string rerouteFilename;
+      if ((strlen(pos) == modInfo->getDataPathA().length()) &&
+          (strcmp(pos, modInfo->getDataPathA().c_str()) == 0)) {
+        rerouteFilename = ToString(GameInfo::instance().getOverwriteDir(), false);
+      } else if (StartsWith(pos, modInfo->getDataPathA().c_str()) && !::FileExists(pos)) {
+        std::ostringstream temp;
+        temp << ToString(GameInfo::instance().getOverwriteDir(), false) << "\\" << (pos + modInfo->getDataPathA().length());
+        rerouteFilename = temp.str();
+
+        std::string targetDirectory = rerouteFilename.substr(0, rerouteFilename.find_last_of("\\/"));
+        CreateDirectoryRecursive(ToWString(targetDirectory, false).c_str(), NULL);
+        modInfo->addOverwriteFile(ToWString(rerouteFilename, false));
+      } else {
+        rerouteFilename = modInfo->getRerouteOpenExisting(pos);
+      }
+      newTo.insert(newTo.end(), rerouteFilename.begin(), rerouteFilename.end());
+      newTo.push_back('\0');
+      pos += strlen(pos) + 1;
+    }
+    newTo.push_back('\0');
+
+    newOp.pTo = &newTo[0];
+  } else {
+    newOp.pTo = NULL;
+  }
+
+  LOGDEBUG("sh file operation a %d: %s - %s", newOp.wFunc, newOp.pFrom,
+           newOp.pTo != NULL ? newOp.pTo : "NULL");
+  return SHFileOperationA_reroute(&newOp);
+}
+
 int STDAPICALLTYPE SHFileOperationW_rep(LPSHFILEOPSTRUCTW lpFileOp)
 {
   PROFILE();
+
+  // avoid recursive call from SHFileOperationA
+  if (HookLock::isLocked()) return SHFileOperationW_reroute(lpFileOp);
 
   SHFILEOPSTRUCTW newOp;
   newOp.hwnd = lpFileOp->hwnd;
@@ -1554,7 +1621,6 @@ int STDAPICALLTYPE SHFileOperationW_rep(LPSHFILEOPSTRUCTW lpFileOp)
   newOp.fAnyOperationsAborted = lpFileOp->fAnyOperationsAborted;
   newOp.hNameMappings = lpFileOp->hNameMappings;
   newOp.lpszProgressTitle = lpFileOp->lpszProgressTitle;
-
   std::vector<wchar_t> newFrom;
   LPCWSTR pos = lpFileOp->pFrom;
   for (;;) {
@@ -1575,18 +1641,21 @@ int STDAPICALLTYPE SHFileOperationW_rep(LPSHFILEOPSTRUCTW lpFileOp)
     for (;;) {
       if (*pos == L'\0') break;
 
-      std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(pos);
-
-      if (StartsWith(pos, modInfo->getDataPathW().c_str()) && !::FileExists(pos)) {
+      std::wstring rerouteFilename;
+      if ((wcslen(pos) == modInfo->getDataPathW().length()) &&
+          (wcscmp(pos, modInfo->getDataPathW().c_str()) == 0)) {
+        rerouteFilename = GameInfo::instance().getOverwriteDir();
+      } else if (StartsWith(pos, modInfo->getDataPathW().c_str()) && !::FileExists(pos)) {
         std::wostringstream temp;
-        temp << GameInfo::instance().getOverwriteDir() << "\\" << (pos + modInfo->getDataPathW().length());
+        temp << GameInfo::instance().getOverwriteDir() << L"\\" << (pos + modInfo->getDataPathW().length());
         rerouteFilename = temp.str();
 
         std::wstring targetDirectory = rerouteFilename.substr(0, rerouteFilename.find_last_of(L"\\/"));
         CreateDirectoryRecursive(targetDirectory.c_str(), NULL);
         modInfo->addOverwriteFile(rerouteFilename);
+      } else {
+        rerouteFilename = modInfo->getRerouteOpenExisting(pos);
       }
-
       newTo.insert(newTo.end(), rerouteFilename.begin(), rerouteFilename.end());
       newTo.push_back(L'\0');
       pos += wcslen(pos) + 1;
@@ -1598,8 +1667,8 @@ int STDAPICALLTYPE SHFileOperationW_rep(LPSHFILEOPSTRUCTW lpFileOp)
     newOp.pTo = NULL;
   }
 
-  LOGDEBUG("sh file operation %d: %ls - %ls", lpFileOp->wFunc, lpFileOp->pFrom,
-           lpFileOp->pTo != NULL ? lpFileOp->pTo : L"NULL");
+  LOGDEBUG("sh file operation w %d: %ls - %ls", newOp.wFunc, newOp.pFrom,
+           newOp.pTo != NULL ? newOp.pTo : L"NULL");
   return SHFileOperationW_reroute(&newOp);
 }
 
@@ -1720,6 +1789,7 @@ BOOL InitHooks()
     INITHOOK(TEXT("kernel32.dll"), CreateHardLinkW);
     INITHOOK(TEXT("kernel32.dll"), GetFullPathNameW);
     INITHOOK(TEXT("kernel32.dll"), GetModuleFileNameW);
+    INITHOOK(TEXT("Shell32.dll"), SHFileOperationA);
     INITHOOK(TEXT("Shell32.dll"), SHFileOperationW);
     INITHOOK(TEXT("version.dll"), GetFileVersionInfoExW);
     INITHOOK(TEXT("version.dll"), GetFileVersionInfoSizeW);
@@ -1891,9 +1961,15 @@ void RemoveHooks()
 
 LONG WINAPI VEHandler(PEXCEPTION_POINTERS exceptionPtrs)
 {
-  if ((exceptionPtrs->ExceptionRecord->ExceptionFlags != EXCEPTION_NONCONTINUABLE) ||
+/*  if ((exceptionPtrs->ExceptionRecord->ExceptionFlags != EXCEPTION_NONCONTINUABLE) ||
       (exceptionPtrs->ExceptionRecord->ExceptionCode == 0xe06d7363)) {
     // don't want to break on non-critical exceptions. 0xe06d7363 indicates a C++ exception. why are those marked non-continuable?
+    return EXCEPTION_CONTINUE_SEARCH;
+  }*/
+
+  if (exceptionPtrs->ExceptionRecord->ExceptionCode != 0xC0000005) {
+    // don't want to break on non-critical errors. The above block didn't work well, crashes
+    // happened for exceptions that wouldn't have been a problem
     return EXCEPTION_CONTINUE_SEARCH;
   }
 
@@ -1965,9 +2041,6 @@ BOOL Init(int logLevel, const wchar_t *profileName)
     return TRUE;
   }
 
-  wchar_t filename[MAX_PATH];
-  ::GetModuleFileNameW(NULL, filename, MAX_PATH);
-
   wchar_t moPath[MAX_PATH_UNICODE];
   ::GetModuleFileNameW(dllModule, moPath, MAX_PATH_UNICODE);
   wchar_t *temp = wcsrchr(moPath, L'\\');
@@ -2017,16 +2090,24 @@ BOOL Init(int logLevel, const wchar_t *profileName)
   Logger::Init(ToString(logFile, false).c_str(), logLevel);
 #endif
 
-
   exceptionHandler = ::AddVectoredExceptionHandler(0, VEHandler);
-
 
   OSVERSIONINFOEX versionInfo;
   ZeroMemory(&versionInfo, sizeof(OSVERSIONINFOEX));
   versionInfo.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEX);
   ::GetVersionEx((OSVERSIONINFO*)&versionInfo);
   Logger::Instance().info("Windows %d.%d (%s)", versionInfo.dwMajorVersion, versionInfo.dwMinorVersion, versionInfo.wProductType == VER_NT_WORKSTATION ? "workstation" : "server");
+  ::GetModuleFileNameW(dllModule, moPath, MAX_PATH_UNICODE);
+  VS_FIXEDFILEINFO version = GetFileVersion(moPath);
+  Logger::Instance().info("hook.dll v%d.%d.%d",
+                          version.dwFileVersionMS >> 16,
+                          version.dwFileVersionMS & 0xFFFF,
+                          version.dwFileVersionLS >> 16);
+
   Logger::Instance().info("Code page: %ld", GetACP());
+
+  wchar_t filename[MAX_PATH];
+  ::GetModuleFileNameW(NULL, filename, MAX_PATH);
   Logger::Instance().info("injecting to %ls", filename);
 
   if (!SetUp(iniName.str(), profileName)) {
@@ -2061,6 +2142,7 @@ BOOL Init(int logLevel, const wchar_t *profileName)
   Logger::Instance().info("injection done");
   return TRUE;
 }
+
 
 BOOL APIENTRY DllMain(HMODULE module,
                       DWORD  reasonForCall,
