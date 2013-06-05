@@ -98,6 +98,10 @@ ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirecto
   m_TweakedIniPathW = m_ProfilePath + L"\\initweaks.ini";
   m_TweakedIniPathA = ToString(m_TweakedIniPathW, false);
 
+  if (!::FileExists_reroute(m_TweakedIniPathW)) {
+    Logger::Instance().info("no ini tweaks file");
+  }
+
   m_ModListPath = m_ProfilePath.substr().append(L"\\modlist.txt");
 
   {
