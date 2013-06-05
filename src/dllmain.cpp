@@ -1016,14 +1016,25 @@ static bool identifyAndManipulate(DWORD *pos, DWORD size)
 }
 
 
+static std::set<std::string> missingIniA;
+
+
 DWORD WINAPI GetPrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LPCSTR lpDefault,
                                           LPSTR lpReturnedString, DWORD nSize, LPCSTR lpFileName)
 {
   int localDummy = 42;
   PROFILE();
+
+  if (missingIniA.find(lpFileName) != missingIniA.end()) {
+    errno = 0x02;
+    ::SetLastError(ERROR_FILE_NOT_FOUND);
+    return 0;
+  }
+
   if (HookLock::isLocked() || (lpFileName == NULL)) {
     return GetPrivateProfileStringA_reroute(lpAppName, lpKeyName, lpDefault, lpReturnedString, nSize, lpFileName);
   }
+
 
   LPCSTR lastSlash = strrchr(lpFileName, '\\');
   if (lastSlash == NULL) {
@@ -1041,7 +1052,12 @@ DWORD WINAPI GetPrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LP
 
     if (iniFilesA.find(fileName) == iniFilesA.end()) {
       std::string rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
-      return GetPrivateProfileStringA_reroute(lpAppName, lpKeyName, lpDefault, lpReturnedString, nSize, rerouteFilename.c_str());
+      errno = 0;
+      DWORD res = GetPrivateProfileStringA_reroute(lpAppName, lpKeyName, lpDefault, lpReturnedString, nSize, rerouteFilename.c_str());
+      if ((errno == 0x02) && (::GetLastError() == ERROR_FILE_NOT_FOUND)) {
+        missingIniA.insert(lpFileName);
+      }
+      return res;
     }
   }
 
@@ -1200,6 +1216,13 @@ DWORD WINAPI GetPrivateProfileSectionW_rep(LPCWSTR lpAppName, LPWSTR lpReturnedS
 UINT WINAPI GetPrivateProfileIntA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, INT nDefault, LPCSTR lpFileName)
 {
   PROFILE();
+
+  if (missingIniA.find(lpFileName) != missingIniA.end()) {
+    errno = 0x02;
+    ::SetLastError(ERROR_FILE_NOT_FOUND);
+    return 0;
+  }
+
   HookLock lock;
 
   if (lpFileName != NULL) {
@@ -1344,7 +1367,6 @@ BOOL WINAPI SetCurrentDirectoryW_rep(LPCWSTR lpPathName)
 {
   PROFILE();
 
-  std::wstring reroutedPath = modInfo->getRerouteOpenExisting(lpPathName, true);
   if (modInfo->setCwd(lpPathName)) {
     std::wstring cwdRerouted;
     if (modInfo->getCurrentDirectory().empty()) {
@@ -1357,6 +1379,8 @@ BOOL WINAPI SetCurrentDirectoryW_rep(LPCWSTR lpPathName)
 
     return res;
   } else {
+    std::wstring reroutedPath = modInfo->getRerouteOpenExisting(lpPathName, true);
+
     LOGDEBUG("set current directory b: %ls -> %ls", lpPathName, reroutedPath.c_str());
     BOOL res = ::SetCurrentDirectoryW_reroute(reroutedPath.c_str());
 
