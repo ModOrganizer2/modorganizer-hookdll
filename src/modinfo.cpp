@@ -304,39 +304,6 @@ bool ModInfo::setCwd(const std::wstring &currentDirectory)
     m_CurrentDirectory.clear();
   }
   return !m_CurrentDirectory.empty();
-
-
-/*  wchar_t temp[MAX_PATH];
-  Canonicalize(temp, currentDirectory.c_str());
-  std::wstring modsDir = GameInfo::instance().getModsDir();
-  std::wstring overwriteDir = GameInfo::instance().getOverwriteDir();
-  m_CurrentDirectory.clear();
-  if (StartsWith(temp, modsDir.c_str())) {
-    wchar_t *relCwd = temp + modsDir.length();
-    if (*relCwd != L'\0') relCwd += 1;
-    // skip the mod name
-    relCwd = wcschr(relCwd, L'\\');
-
-    if (relCwd != NULL) {
-      Canonicalize(temp, GameInfo::instance().getGameDirectory().append(L"\\data\\").append(relCwd).c_str());
-      m_CurrentDirectory.assign(temp);
-    } else {
-      m_CurrentDirectory = m_DataPathAbsoluteW;
-    }
-
-    return true;
-  } else if (StartsWith(temp, overwriteDir.c_str())) {
-    wchar_t *relCwd = temp + overwriteDir.length();
-    if (*relCwd != L'\0') relCwd += 1;
-    Canonicalize(temp, GameInfo::instance().getGameDirectory().append(L"\\data\\").append(relCwd).c_str());
-    m_CurrentDirectory.assign(temp);
-
-    return true;
-  } else if (StartsWith(temp, m_DataPathAbsoluteW.c_str()) && !FileExists_reroute(temp)) {
-    m_CurrentDirectory.assign(temp);
-    return true;
-  }
-  return false;*/
 }
 
 
