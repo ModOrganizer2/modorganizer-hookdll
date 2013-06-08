@@ -12,11 +12,21 @@ FILEOS          VOS__WINDOWS32
 FILETYPE        VFT_DLL
 FILESUBTYPE     VFT2_UNKNOWN
 BEGIN
-    BLOCK "StringFileInfo"
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904B0"
     BEGIN
-        VALUE "CompanyName", "Tannin"
-        VALUE "FileDescription", "Component of Mod Organizer"
-        VALUE "FileVersion", VER_FILEVERSION_STR
+      VALUE "FileVersion", VER_FILEVERSION_STR
+      VALUE "CompanyName", "Tannin\0"
+      VALUE "FileDescription",  "Mod Organizer OverlayFS\0"
+      VALUE "OriginalFilename", "hook.dll\0"
+      VALUE "ProductName",      "Mod Organizer\0"
+      VALUE "ProductVersion", VER_FILEVERSION_STR
     END
+  END
 
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x0409L, 1200
+  END
 END
