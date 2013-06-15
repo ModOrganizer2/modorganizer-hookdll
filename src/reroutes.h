@@ -185,6 +185,9 @@ extern SHFileOperationA_type SHFileOperationA_reroute;
 typedef int (STDAPICALLTYPE *SHFileOperationW_type)(LPSHFILEOPSTRUCTW);
 extern SHFileOperationW_type SHFileOperationW_reroute;
 
+typedef BOOL (WINAPI *GetFileVersionInfoW_type)(LPCWSTR, DWORD, DWORD, LPVOID);
+extern GetFileVersionInfoW_type GetFileVersionInfoW_reroute;
+
 typedef BOOL (WINAPI *GetFileVersionInfoExW_type)(DWORD, LPCWSTR, DWORD, DWORD, LPVOID);
 extern GetFileVersionInfoExW_type GetFileVersionInfoExW_reroute;
 

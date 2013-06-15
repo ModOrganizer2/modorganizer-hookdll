@@ -105,6 +105,7 @@ CreateHardLinkA_type CreateHardLinkA_reroute = CreateHardLinkA;
 GetFullPathNameW_type GetFullPathNameW_reroute = GetFullPathNameW;
 SHFileOperationA_type SHFileOperationA_reroute = SHFileOperationA;
 SHFileOperationW_type SHFileOperationW_reroute = SHFileOperationW;
+GetFileVersionInfoW_type GetFileVersionInfoW_reroute = GetFileVersionInfoW;
 GetFileVersionInfoExW_type GetFileVersionInfoExW_reroute = GetFileVersionInfoExW;
 GetFileVersionInfoSizeW_type GetFileVersionInfoSizeW_reroute = GetFileVersionInfoSizeW;
 GetModuleFileNameW_type GetModuleFileNameW_reroute = GetModuleFileNameW;
@@ -1672,9 +1673,28 @@ int STDAPICALLTYPE SHFileOperationW_rep(LPSHFILEOPSTRUCTW lpFileOp)
   return SHFileOperationW_reroute(&newOp);
 }
 
+BOOL WINAPI GetFileVersionInfoW_rep(LPCWSTR lptstrFilename, DWORD dwHandle, DWORD dwLen, LPVOID lpData)
+{
+  PROFILE();
+
+  HookLock lock; // GetFileVersionInfoW calls the ex variant on some but not all windows variants
+
+  WCHAR temp[MAX_PATH];
+  modInfo->getFullPathName(lptstrFilename, temp, MAX_PATH);
+
+  std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(temp, false, NULL);
+
+  LOGDEBUG("get file version w %ls -> %ls", lptstrFilename, rerouteFilename.c_str());
+
+  return GetFileVersionInfoW_reroute(rerouteFilename.c_str(), dwHandle, dwLen, lpData);
+}
+
+
 BOOL WINAPI GetFileVersionInfoExW_rep(DWORD dwFlags, LPCWSTR lptstrFilename, DWORD dwHandle, DWORD dwLen, LPVOID lpData)
 {
   PROFILE();
+
+  if (HookLock::isLocked()) return GetFileVersionInfoExW_reroute(dwFlags, lptstrFilename, dwHandle, dwLen, lpData);
 
   WCHAR temp[MAX_PATH];
   modInfo->getFullPathName(lptstrFilename, temp, MAX_PATH);
@@ -1695,9 +1715,11 @@ DWORD WINAPI GetFileVersionInfoSizeW_rep(LPCWSTR lptstrFilename, LPDWORD lpdwHan
 
   std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(temp, false, NULL);
 
-  LOGDEBUG("get file version size %ls -> %ls", lptstrFilename, rerouteFilename.c_str());
+  DWORD res = GetFileVersionInfoSizeW_reroute(rerouteFilename.c_str(), lpdwHandle);
 
-  return GetFileVersionInfoSizeW_reroute(rerouteFilename.c_str(), lpdwHandle);
+  LOGDEBUG("get file version size %ls -> %ls -> %lu", lptstrFilename, rerouteFilename.c_str(), res);
+
+  return res;
 }
 
 
@@ -1791,6 +1813,7 @@ BOOL InitHooks()
     INITHOOK(TEXT("kernel32.dll"), GetModuleFileNameW);
     INITHOOK(TEXT("Shell32.dll"), SHFileOperationA);
     INITHOOK(TEXT("Shell32.dll"), SHFileOperationW);
+    INITHOOK(TEXT("version.dll"), GetFileVersionInfoW);
     INITHOOK(TEXT("version.dll"), GetFileVersionInfoExW);
     INITHOOK(TEXT("version.dll"), GetFileVersionInfoSizeW);
 
