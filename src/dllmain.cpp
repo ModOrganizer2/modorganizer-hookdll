@@ -457,12 +457,6 @@ BOOL WINAPI GetFileAttributesExW_rep(LPCWSTR lpFileName, GET_FILEEX_INFO_LEVELS 
   LPCWSTR baseName = GetBaseName(lpFileName);
   int pathLen = baseName - lpFileName;
 
-/*  if (usedBSAList.find(ToLower(ToString(baseName, true))) != usedBSAList.end()) {
-    // hide bsa files loaded already through the resource archive list
-    LOGDEBUG("%ls hidden from the game", lpFileName);
-    return FALSE;
-  }*/
-
   bool rerouted = false;
 
   std::wstring rerouteFilename;
@@ -470,7 +464,6 @@ BOOL WINAPI GetFileAttributesExW_rep(LPCWSTR lpFileName, GET_FILEEX_INFO_LEVELS 
   if (bsaName != bsaMap.end()) {
     rerouteFilename = modInfo->getRerouteOpenExisting(std::wstring(lpFileName).substr(0, pathLen).append(ToWString(bsaName->second, true)).c_str(),
                                                       false, &rerouted);
-//    usedBSAList.insert(ToLower(bsaName->second));
   } else {
     rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName, false, &rerouted);
   }
@@ -719,9 +712,9 @@ BOOL WINAPI MoveFileExA_rep(LPCSTR lpExistingFileName, LPCSTR lpNewFileName, DWO
 
 static bool firstRun = true;
 
-static void GetSectionRange(DWORD *start, DWORD *end)
+static void GetSectionRange(DWORD *start, DWORD *end, HANDLE moduleHandle)
 {
-  BYTE *exeModule = reinterpret_cast<BYTE*>(::GetModuleHandle(NULL));
+  BYTE *exeModule = reinterpret_cast<BYTE*>(moduleHandle);
   if (exeModule == NULL) {
     Logger::Instance().error("failed to determine address range of executable: %lu", ::GetLastError());
     *start = *end = NULL;
@@ -1027,7 +1020,7 @@ DWORD WINAPI GetPrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LP
   int localDummy = 42;
   PROFILE();
 
-  if (missingIniA.find(lpFileName) != missingIniA.end()) {
+  if ((lpFileName != NULL) && (missingIniA.find(lpFileName) != missingIniA.end())) {
     errno = 0x02;
     ::SetLastError(ERROR_FILE_NOT_FOUND);
     return 0;
@@ -1056,7 +1049,8 @@ DWORD WINAPI GetPrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LP
       std::string rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
       errno = 0;
       DWORD res = GetPrivateProfileStringA_reroute(lpAppName, lpKeyName, lpDefault, lpReturnedString, nSize, rerouteFilename.c_str());
-      if ((errno == 0x02) && (::GetLastError() == ERROR_FILE_NOT_FOUND)) {
+      // lpFileName can't be NULL actually because there is a test earlier in the function
+      if ((errno == 0x02) && (::GetLastError() == ERROR_FILE_NOT_FOUND) && (lpFileName != NULL)) {
         missingIniA.insert(lpFileName);
       }
       return res;
@@ -1067,7 +1061,7 @@ DWORD WINAPI GetPrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LP
     // if we don't reach the success-case, we can safely assume it failed
     archiveListHookState = HOOK_FAILED;
     DWORD start, end;
-    GetSectionRange(&start, &end);
+    GetSectionRange(&start, &end, ::GetModuleHandle(NULL));
     // search up through the stack to find the first address that belongs to the code-segment of the game-binary.
     // that is the return address to the function that called GetPrivateProfileString
     DWORD *pos = reinterpret_cast<DWORD*>(&localDummy);
@@ -1219,7 +1213,7 @@ UINT WINAPI GetPrivateProfileIntA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, INT nD
 {
   PROFILE();
 
-  if (missingIniA.find(lpFileName) != missingIniA.end()) {
+  if ((lpFileName != NULL) && (missingIniA.find(lpFileName) != missingIniA.end())) {
     errno = 0x02;
     ::SetLastError(ERROR_FILE_NOT_FOUND);
     return 0;
@@ -1353,13 +1347,14 @@ HFILE WINAPI OpenFile_rep(LPCSTR lpFileName, LPOFSTRUCT lpReOpenBuff, UINT uStyl
 DWORD WINAPI GetCurrentDirectoryW_rep(DWORD nBufferLength, LPWSTR lpBuffer)
 {
   PROFILE();
-
-  std::wstring FakeCurrentDirectory = modInfo->getCurrentDirectory();
-  if (FakeCurrentDirectory.length() != 0) {
-    size_t len = std::min<size_t>(FakeCurrentDirectory.length(), nBufferLength - 1);
-    wcsncpy(lpBuffer, FakeCurrentDirectory.c_str(), len);
-    lpBuffer[len] = L'\0';
-    return static_cast<DWORD>(FakeCurrentDirectory.length() + 1);
+  std::wstring fakeCurrentDirectory = modInfo->getCurrentDirectory();
+  if (fakeCurrentDirectory.length() != 0) {
+    if (nBufferLength > 0) {
+      size_t len = std::min<size_t>(fakeCurrentDirectory.length(), nBufferLength - 1);
+      wcsncpy(lpBuffer, fakeCurrentDirectory.c_str(), len);
+      lpBuffer[len] = L'\0';
+    }
+    return static_cast<DWORD>(fakeCurrentDirectory.length() + 1);
   } else {
     return ::GetCurrentDirectoryW_reroute(nBufferLength, lpBuffer);
   }
@@ -1746,18 +1741,12 @@ DWORD WINAPI GetModuleFileNameW_rep(HMODULE hModule, LPWSTR lpFilename, DWORD nS
 }
 
 
-
 std::vector<ApiHook*> hooks;
 
 
 #define INITHOOK(module, functionname) { ApiHook* temp = new ApiHook(module, #functionname, (void*)&functionname ## _rep); \
   functionname ## _reroute = reinterpret_cast<functionname ## _type>(temp->GetReroute()); \
   hooks.push_back(temp); }
-
-
-void InitPaths()
-{
-}
 
 
 BOOL InitHooks()
@@ -1953,7 +1942,6 @@ BOOL SetUpBSAMap()
     if (buffer[0] == '\0') {
       continue;
     }
-//    bsaList.insert(ToLower(std::string(buffer)));
 
     Logger::Instance().info("\"%s\" maps to \"%s\"", shortName, buffer);
     bsaMap[shortName] = buffer;
@@ -1995,8 +1983,17 @@ LONG WINAPI VEHandler(PEXCEPTION_POINTERS exceptionPtrs)
     // happened for exceptions that wouldn't have been a problem
     return EXCEPTION_CONTINUE_SEARCH;
   }
+  DWORD start, end;
+  GetSectionRange(&start, &end, dllModule);
 
   Logger::Instance().error("Windows Exception (%x). Last hooked call: %s", exceptionPtrs->ExceptionRecord->ExceptionCode, s_LastFunction);
+
+  if (((DWORD)exceptionPtrs->ExceptionRecord->ExceptionAddress < start) ||
+      ((DWORD)exceptionPtrs->ExceptionRecord->ExceptionAddress > end)) {
+    LOGDEBUG("exception did not originate from Mod Organizer");
+    return EXCEPTION_CONTINUE_SEARCH;
+  }
+
   RemoveHooks();
 
   typedef BOOL (WINAPI *FuncMiniDumpWriteDump)(HANDLE process, DWORD pid, HANDLE file, MINIDUMP_TYPE dumpType,
@@ -2103,8 +2100,6 @@ BOOL Init(int logLevel, const wchar_t *profileName)
     MessageBoxA(NULL, e.what(), "initialisation failed", MB_OK);
     return TRUE;
   }
-
-  InitPaths();
 
   std::wstring logFile = GameInfo::instance().getLogDir().append(L"\\").append(AppConfig::logFile());
 #ifdef UNICODE
