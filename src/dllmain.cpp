@@ -106,7 +106,7 @@ GetFullPathNameW_type GetFullPathNameW_reroute = GetFullPathNameW;
 SHFileOperationA_type SHFileOperationA_reroute = SHFileOperationA;
 SHFileOperationW_type SHFileOperationW_reroute = SHFileOperationW;
 GetFileVersionInfoW_type GetFileVersionInfoW_reroute = GetFileVersionInfoW;
-GetFileVersionInfoExW_type GetFileVersionInfoExW_reroute = GetFileVersionInfoExW;
+GetFileVersionInfoExW_type GetFileVersionInfoExW_reroute = NULL; // not available on windows xp
 GetFileVersionInfoSizeW_type GetFileVersionInfoSizeW_reroute = GetFileVersionInfoSizeW;
 GetModuleFileNameW_type GetModuleFileNameW_reroute = GetModuleFileNameW;
 
@@ -1752,6 +1752,11 @@ std::vector<ApiHook*> hooks;
 BOOL InitHooks()
 {
   LPCTSTR module = ::GetModuleHandle(TEXT("kernelbase.dll")) != NULL ? TEXT("kernelbase.dll") : TEXT("kernel32");
+
+  OSVERSIONINFO versionInfo;
+  versionInfo.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
+  GetVersionEx(&versionInfo);
+
   try {
     INITHOOK(TEXT("kernel32.dll"), CreateProcessA);
     INITHOOK(TEXT("kernel32.dll"), CreateProcessW);
@@ -1803,8 +1808,13 @@ BOOL InitHooks()
     INITHOOK(TEXT("Shell32.dll"), SHFileOperationA);
     INITHOOK(TEXT("Shell32.dll"), SHFileOperationW);
     INITHOOK(TEXT("version.dll"), GetFileVersionInfoW);
-    INITHOOK(TEXT("version.dll"), GetFileVersionInfoExW);
     INITHOOK(TEXT("version.dll"), GetFileVersionInfoSizeW);
+
+
+
+    if (versionInfo.dwMajorVersion >= 6) { // vista and up
+      INITHOOK(TEXT("version.dll"), GetFileVersionInfoExW);
+    }
 
     LOGDEBUG("all hooks installed");
 
