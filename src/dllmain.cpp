@@ -1023,7 +1023,15 @@ DWORD WINAPI GetPrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LP
   if ((lpFileName != NULL) && (missingIniA.find(lpFileName) != missingIniA.end())) {
     errno = 0x02;
     ::SetLastError(ERROR_FILE_NOT_FOUND);
-    return 0;
+    int res = (std::min<int>)(nSize - 1, strlen(lpDefault));
+    if ((res > 0) && (lpDefault != NULL)) {
+      strncpy(lpReturnedString, lpDefault, res);
+      lpReturnedString[res] = '\0';
+      return res;
+    } else {
+      lpReturnedString[0] = '\0';
+      return 0;
+    }
   }
 
   if (HookLock::isLocked() || (lpFileName == NULL)) {
@@ -1050,7 +1058,7 @@ DWORD WINAPI GetPrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LP
       errno = 0;
       DWORD res = GetPrivateProfileStringA_reroute(lpAppName, lpKeyName, lpDefault, lpReturnedString, nSize, rerouteFilename.c_str());
       // lpFileName can't be NULL actually because there is a test earlier in the function
-      if ((errno == 0x02) && (::GetLastError() == ERROR_FILE_NOT_FOUND) && (lpFileName != NULL)) {
+      if ((::GetLastError() == ERROR_FILE_NOT_FOUND) && (lpFileName != NULL)) {
         missingIniA.insert(lpFileName);
       }
       return res;
@@ -1214,11 +1222,9 @@ UINT WINAPI GetPrivateProfileIntA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, INT nD
   PROFILE();
 
   if ((lpFileName != NULL) && (missingIniA.find(lpFileName) != missingIniA.end())) {
-    errno = 0x02;
     ::SetLastError(ERROR_FILE_NOT_FOUND);
-    return 0;
+    return nDefault;
   }
-
   HookLock lock;
 
   if (lpFileName != NULL) {

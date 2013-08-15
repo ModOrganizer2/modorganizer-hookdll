@@ -340,7 +340,7 @@ void ModInfo::dumpDirectoryStructure(const DirectoryEntry *directory, int indent
 {
   Logger::Instance().info("%*c[%ls]", indent, ' ', directory->getName().c_str());
   { // print files
-    std::vector<FileEntry*> files = directory->getFiles();
+    std::vector<FileEntry::Ptr> files = directory->getFiles();
     for (auto iter = files.begin(); iter != files.end(); ++iter) {
       bool ignore;
       Logger::Instance().info("%*c%ls - %ls", indent + 2, ' ', (*iter)->getName().c_str(),
@@ -625,6 +625,7 @@ HANDLE ModInfo::dataSearch(LPCWSTR absoluteFileName,
     }
   }
 
+  // and the overwrite folder too
   {
     std::wostringstream fullPath;
     fullPath << GameInfo::instance().getOverwriteDir() << "\\" << (absoluteFileName + filenameOffset);
@@ -663,35 +664,46 @@ HANDLE ModInfo::findStart(LPCWSTR lpFileName,
                           LPVOID lpSearchFilter,
                           DWORD dwAdditionalFlags)
 {
-  WIN32_FIND_DATAW tempData;
-  ::ZeroMemory(&tempData, sizeof(WIN32_FIND_DATAW));
-  HANDLE searchHandle = FindFirstFileExW_reroute(lpFileName, fInfoLevelId, &tempData, fSearchOp, lpSearchFilter, dwAdditionalFlags);
-  // search pattern with full absolute path
-  WCHAR absoluteFileName[MAX_PATH];
-  getFullPathName(lpFileName, absoluteFileName, MAX_PATH);
-
-  size_t filenameOffset = 0;
-  if ((StartsWith(absoluteFileName, m_DataPathAbsoluteW.c_str())) &&
-      ((absoluteFileName[m_DataPathAbsoluteW.length()] == '\\') ||
-       (absoluteFileName[m_DataPathAbsoluteW.length()] == '/'))) {
-    filenameOffset = m_DataPathAbsoluteW.length();
-  } else {
-    *reinterpret_cast<LPWIN32_FIND_DATAW>(lpFindFileData) = tempData;
-    return searchHandle;
+  WCHAR temp[MAX_PATH];
+  getFullPathName(lpFileName, temp, MAX_PATH);
+  FileEntry::Ptr file;
+  if (StartsWith(temp, m_DataPathAbsoluteW.c_str())) {
+    file = m_DirectoryStructure.searchFile(temp + m_DataPathAbsoluteW.length() + 1, NULL);
   }
-
-  HANDLE handle = dataSearch(absoluteFileName, filenameOffset, searchHandle,
-                    tempData, fInfoLevelId, fSearchOp,
-                    lpSearchFilter, dwAdditionalFlags);
-
-  if (handle != INVALID_HANDLE_VALUE) {
-    // if there were results, add them to our buffer
-    findNext(handle, (LPWIN32_FIND_DATAW)lpFindFileData);
-    ::SetLastError(ERROR_SUCCESS);
+  if (file.get() != NULL) {
+    // early out if the pattern is a single file because we can find it in-memory
+    return FindFirstFileExW_reroute(file->getFullPath().c_str(), fInfoLevelId, lpFindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags);
   } else {
-    ::SetLastError(ERROR_FILE_NOT_FOUND);
+    WIN32_FIND_DATAW tempData;
+    ::ZeroMemory(&tempData, sizeof(WIN32_FIND_DATAW));
+    HANDLE searchHandle = FindFirstFileExW_reroute(lpFileName, fInfoLevelId, &tempData, fSearchOp, lpSearchFilter, dwAdditionalFlags);
+    // search pattern with full absolute path
+    WCHAR absoluteFileName[MAX_PATH];
+    getFullPathName(lpFileName, absoluteFileName, MAX_PATH);
+
+    size_t filenameOffset = 0;
+    if ((StartsWith(absoluteFileName, m_DataPathAbsoluteW.c_str())) &&
+        ((absoluteFileName[m_DataPathAbsoluteW.length()] == '\\') ||
+         (absoluteFileName[m_DataPathAbsoluteW.length()] == '/'))) {
+      filenameOffset = m_DataPathAbsoluteW.length();
+    } else {
+      *reinterpret_cast<LPWIN32_FIND_DATAW>(lpFindFileData) = tempData;
+      return searchHandle;
+    }
+
+    HANDLE handle = dataSearch(absoluteFileName, filenameOffset, searchHandle,
+                      tempData, fInfoLevelId, fSearchOp,
+                      lpSearchFilter, dwAdditionalFlags);
+
+    if (handle != INVALID_HANDLE_VALUE) {
+      // if there were results, add them to our buffer
+      findNext(handle, (LPWIN32_FIND_DATAW)lpFindFileData);
+      ::SetLastError(ERROR_SUCCESS);
+    } else {
+      ::SetLastError(ERROR_FILE_NOT_FOUND);
+    }
+    return handle;
   }
-  return handle;
 }
 
 
