@@ -264,16 +264,15 @@ std::wstring ModInfo::reverseReroute(const std::wstring &path, bool *rerouted)
   std::wstring result;
   wchar_t temp[MAX_PATH];
   Canonicalize(temp, path.c_str());
-  std::wstring modsDir = GameInfo::instance().getModsDir();
   std::wstring overwriteDir = GameInfo::instance().getOverwriteDir();
-  if (StartsWith(temp, modsDir.c_str())) {
-    wchar_t *relPath = temp + modsDir.length();
+  if (StartsWith(temp, m_ModsPath.c_str())) {
+    wchar_t *relPath = temp + m_ModsPath.length();
     if (*relPath != L'\0') relPath += 1;
     // skip the mod name
     relPath = wcschr(relPath, L'\\');
 
     if (relPath != NULL) {
-      Canonicalize(temp, GameInfo::instance().getGameDirectory().append(L"\\data\\").append(relPath).c_str());
+      Canonicalize(temp, (m_DataPathAbsoluteW + relPath).c_str());
       result.assign(temp);
     } else {
       result = m_DataPathAbsoluteW;
@@ -283,7 +282,7 @@ std::wstring ModInfo::reverseReroute(const std::wstring &path, bool *rerouted)
   } else if (StartsWith(temp, overwriteDir.c_str())) {
     wchar_t *relPath = temp + overwriteDir.length();
     if (*relPath != L'\0') relPath += 1;
-    Canonicalize(temp, GameInfo::instance().getGameDirectory().append(L"\\data\\").append(relPath).c_str());
+    Canonicalize(temp, (m_DataPathAbsoluteW + relPath).c_str());
     result.assign(temp);
 
     if (rerouted != NULL) *rerouted = true;
