@@ -1733,10 +1733,11 @@ DWORD WINAPI GetModuleFileNameW_rep(HMODULE hModule, LPWSTR lpFilename, DWORD nS
     bool isRerouted = false;
     std::wstring rerouted = modInfo->reverseReroute(lpFilename, &isRerouted);
     if (isRerouted) {
-      LOGDEBUG("get module file name %ls -> %ls", lpFilename, rerouted.c_str());
+      LOGDEBUG("get module file name %ls -> %ls: %lu", lpFilename, rerouted.c_str(), res);
       DWORD len = (std::min<DWORD>)(rerouted.size(), nSize - 1);
       _wcsnset(lpFilename, L'\0', len + 1);
       wcsncpy(lpFilename, rerouted.c_str(), len);
+      lpFilename[len] = L'\0';
       res = len;
       if (rerouted.size() > nSize) {
         ::SetLastError(ERROR_INSUFFICIENT_BUFFER);
