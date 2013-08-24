@@ -1999,15 +1999,17 @@ LONG WINAPI VEHandler(PEXCEPTION_POINTERS exceptionPtrs)
     // happened for exceptions that wouldn't have been a problem
     return EXCEPTION_CONTINUE_SEARCH;
   }
+
   DWORD start, end;
   GetSectionRange(&start, &end, dllModule);
 
-  Logger::Instance().error("Windows Exception (%x). Last hooked call: %s", exceptionPtrs->ExceptionRecord->ExceptionCode, s_LastFunction);
-
   if (((DWORD)exceptionPtrs->ExceptionRecord->ExceptionAddress < start) ||
       ((DWORD)exceptionPtrs->ExceptionRecord->ExceptionAddress > end)) {
-    LOGDEBUG("exception did not originate from Mod Organizer");
+    Logger::Instance().info("Windows Exception (%x). exception did not originate from Mod Organizer. Last hooked call: %s",
+                            exceptionPtrs->ExceptionRecord->ExceptionCode, s_LastFunction);
     return EXCEPTION_CONTINUE_SEARCH;
+  } else {
+    Logger::Instance().error("Windows Exception (%x). Last hooked call: %s", exceptionPtrs->ExceptionRecord->ExceptionCode, s_LastFunction);
   }
 
   RemoveHooks();
