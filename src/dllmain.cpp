@@ -1023,8 +1023,9 @@ DWORD WINAPI GetPrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LP
   if ((lpFileName != NULL) && (missingIniA.find(lpFileName) != missingIniA.end())) {
     errno = 0x02;
     ::SetLastError(ERROR_FILE_NOT_FOUND);
-    int res = (std::min<int>)(nSize - 1, strlen(lpDefault));
-    if ((res > 0) && (lpDefault != NULL)) {
+    int defLength = lpDefault != NULL ? strlen(lpDefault) : 0;
+    int res = (std::min<int>)(nSize - 1, defLength);
+    if (res > 0) {
       strncpy(lpReturnedString, lpDefault, res);
       lpReturnedString[res] = '\0';
       return res;
