@@ -62,7 +62,7 @@ extern char dataPathAbsoluteA[MAX_PATH];
 }*/
 
 
-bool FileExists_reroute(std::wstring filename)
+bool FileExists_reroute(const std::wstring &filename)
 {
   WIN32_FIND_DATAW findData;
   ZeroMemory(&findData, sizeof(WIN32_FIND_DATAW));

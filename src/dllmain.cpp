@@ -358,16 +358,22 @@ HANDLE WINAPI CreateFileW_rep(LPCWSTR lpFileName,
 
   modInfo->checkPathAlternative(fullFileName);
 
-  // newly created files in the data directory go to the overwrites directory
+  // newly created files in the data directory go to overwrite
   if (((dwCreationDisposition == CREATE_ALWAYS) || (dwCreationDisposition == CREATE_NEW)) &&
       (StartsWith(fullFileName, modInfo->getDataPathW().c_str()))) {
-    std::wostringstream temp;
-    temp << GameInfo::instance().getOverwriteDir() << "\\" << (fullFileName + modInfo->getDataPathW().length());
-    rerouteFilename = temp.str();
+    // need to check if the file exists. If it does, act on the existing file, otherwise the behaviour is not transparent
+    // if the regular call causes an error message and rerouted to
+    bool rerouted = false;
+    rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName, false, &rerouted);
+    if (!rerouted && !FileExists_reroute(lpFileName)) {
+      std::wostringstream temp;
+      temp << GameInfo::instance().getOverwriteDir() << "\\" << (fullFileName + modInfo->getDataPathW().length());
+      rerouteFilename = temp.str();
 
-    std::wstring targetDirectory = rerouteFilename.substr(0, rerouteFilename.find_last_of(L"\\/"));
-    CreateDirectoryRecursive(targetDirectory.c_str(), NULL);
-    modInfo->addOverwriteFile(rerouteFilename);
+      std::wstring targetDirectory = rerouteFilename.substr(0, rerouteFilename.find_last_of(L"\\/"));
+      CreateDirectoryRecursive(targetDirectory.c_str(), NULL);
+      modInfo->addOverwriteFile(rerouteFilename);
+    }
   }
 
   bool rerouted = false;
@@ -1012,6 +1018,7 @@ static bool identifyAndManipulate(DWORD *pos, DWORD size)
 
 
 static std::set<std::string> missingIniA;
+static std::set<std::string> existingIniA;
 
 
 DWORD WINAPI GetPrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LPCSTR lpDefault,
@@ -1057,10 +1064,15 @@ DWORD WINAPI GetPrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LP
     if (iniFilesA.find(fileName) == iniFilesA.end()) {
       std::string rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
       errno = 0;
+      ::SetLastError(NOERROR);
       DWORD res = GetPrivateProfileStringA_reroute(lpAppName, lpKeyName, lpDefault, lpReturnedString, nSize, rerouteFilename.c_str());
-      // lpFileName can't be NULL actually because there is a test earlier in the function
-      if ((::GetLastError() == ERROR_FILE_NOT_FOUND) && (lpFileName != NULL)) {
+      // lpFileName can't be NULL here because there is a test earlier in the function
+      if ((::GetLastError() == ERROR_FILE_NOT_FOUND) && (lpFileName != NULL) &&
+          !(existingIniA.find(lpFileName) != existingIniA.end()) && !FileExists(lpFileName)) {
+        LOGDEBUG("%s doesn't exist, no further queries", lpFileName);
         missingIniA.insert(lpFileName);
+      } else {
+        existingIniA.insert(lpFileName);
       }
       return res;
     }
@@ -1370,6 +1382,9 @@ DWORD WINAPI GetCurrentDirectoryW_rep(DWORD nBufferLength, LPWSTR lpBuffer)
 BOOL WINAPI SetCurrentDirectoryW_rep(LPCWSTR lpPathName)
 {
   PROFILE();
+
+  missingIniA.clear();
+  existingIniA.clear();
 
   if (modInfo->setCwd(lpPathName)) {
     std::wstring cwdRerouted;

@@ -29,6 +29,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include <directoryentry.h>
 
 
+bool FileExists_reroute(const std::wstring &filename);
+
+
 class ModInfo {
 
 public:
