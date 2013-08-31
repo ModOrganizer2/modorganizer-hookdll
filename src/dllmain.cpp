@@ -2209,7 +2209,8 @@ BOOL APIENTRY DllMain(HMODULE module,
       RemoveHooks();
       //TProfile::displayProfile();
 
-//      delete modInfo;
+      delete modInfo;
+      modInfo = NULL;
     } break;
 	  case DLL_THREAD_ATTACH: {
     } break;
