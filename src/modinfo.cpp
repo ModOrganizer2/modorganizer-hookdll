@@ -282,7 +282,7 @@ std::wstring ModInfo::reverseReroute(const std::wstring &path, bool *rerouted)
   } else if (StartsWith(temp, overwriteDir.c_str())) {
     wchar_t *relPath = temp + overwriteDir.length();
     if (*relPath != L'\0') relPath += 1;
-    Canonicalize(temp, (m_DataPathAbsoluteW + relPath).c_str());
+    Canonicalize(temp, (m_DataPathAbsoluteW + L"\\" + relPath).c_str());
     result.assign(temp);
 
     if (rerouted != NULL) *rerouted = true;
@@ -294,11 +294,25 @@ std::wstring ModInfo::reverseReroute(const std::wstring &path, bool *rerouted)
 }
 
 
+
+bool DirectoryExists(const std::wstring &directory)
+{
+  DWORD attributes = GetFileAttributesW(directory.c_str());
+  if (attributes != INVALID_FILE_ATTRIBUTES) {
+    return (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0UL;
+  } else {
+    // this could also be the case if the directory exists but we can't read it. tough luck
+    return false;
+  }
+}
+
+
+
 bool ModInfo::setCwd(const std::wstring &currentDirectory)
 {
   bool rerouted = false;
   m_CurrentDirectory = reverseReroute(currentDirectory, &rerouted);
-  if (!rerouted && FileExists_reroute(m_CurrentDirectory.c_str())) {
+  if (!rerouted && DirectoryExists(m_CurrentDirectory)) {
     // regular un-rerouted setcwd
     m_CurrentDirectory.clear();
   }

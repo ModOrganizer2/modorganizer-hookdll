@@ -436,7 +436,6 @@ DWORD WINAPI GetFileAttributesW_rep(LPCWSTR lpFileName)
     return GetFileAttributesW_reroute(lpFileName);
   }
   LPCWSTR baseName = GetBaseName(lpFileName);
-
   int pathLen = baseName - lpFileName;
 
   bool rerouted = false;
@@ -506,13 +505,14 @@ HANDLE WINAPI FindFirstFileExW_rep(LPCWSTR lpFileName,
 {
   PROFILE();
 
-  if (HookLock::isLocked() || (lpFileName == NULL)) return FindFirstFileExW_reroute(lpFileName, fInfoLevelId, lpFindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags);
+  if (HookLock::isLocked() || (lpFileName == NULL)) {
+    return FindFirstFileExW_reroute(lpFileName, fInfoLevelId, lpFindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags);
+  }
   LPCWSTR baseName = GetBaseName(lpFileName);
 
   size_t pathLen = baseName - lpFileName;
 
   std::wstring rerouteFilename = lpFileName;
-
   std::map<std::string, std::string>::iterator bsaName = bsaMap.find(ToString(baseName, true));
   LPCWSTR sPos = NULL;
   if (bsaName != bsaMap.end()) {
@@ -1379,6 +1379,7 @@ DWORD WINAPI GetCurrentDirectoryW_rep(DWORD nBufferLength, LPWSTR lpBuffer)
   }
 }
 
+
 BOOL WINAPI SetCurrentDirectoryW_rep(LPCWSTR lpPathName)
 {
   PROFILE();
@@ -1535,6 +1536,7 @@ DWORD WINAPI GetFullPathNameW_rep(LPCWSTR lpFileName, DWORD nBufferLength, LPWST
       WCHAR temp[MAX_PATH];
 
       ::PathCombineW(temp, modInfo->getCurrentDirectory().c_str(), lpFileName);
+
       WCHAR temp2[MAX_PATH];
       size_t count = 0UL;
       if (::PathCanonicalizeW(temp2, temp)) {
@@ -1545,6 +1547,7 @@ DWORD WINAPI GetFullPathNameW_rep(LPCWSTR lpFileName, DWORD nBufferLength, LPWST
         count = std::min<size_t>(nBufferLength - 1, wcslen(temp));
         wcsncpy(lpBuffer, temp, count);
       }
+      lpBuffer[count] = L'\0';
       if (lpFilePart != NULL) {
         *lpFilePart = GetBaseName(lpBuffer);
         if (**lpFilePart == L'\0') {
@@ -1701,9 +1704,11 @@ BOOL WINAPI GetFileVersionInfoW_rep(LPCWSTR lptstrFilename, DWORD dwHandle, DWOR
 
   std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(temp, false, NULL);
 
-  LOGDEBUG("get file version w %ls -> %ls", lptstrFilename, rerouteFilename.c_str());
+  BOOL res = GetFileVersionInfoW_reroute(rerouteFilename.c_str(), dwHandle, dwLen, lpData);
 
-  return GetFileVersionInfoW_reroute(rerouteFilename.c_str(), dwHandle, dwLen, lpData);
+  LOGDEBUG("get file version w %ls -> %ls: %d", lptstrFilename, rerouteFilename.c_str(), res);
+
+  return res;
 }
 
 
@@ -1749,7 +1754,7 @@ DWORD WINAPI GetModuleFileNameW_rep(HMODULE hModule, LPWSTR lpFilename, DWORD nS
     bool isRerouted = false;
     std::wstring rerouted = modInfo->reverseReroute(lpFilename, &isRerouted);
     if (isRerouted) {
-      LOGDEBUG("get module file name %ls -> %ls: %lu", lpFilename, rerouted.c_str(), res);
+      LOGDEBUG("get module file name %ls -> %ls: %x", lpFilename, rerouted.c_str(), res);
       DWORD len = (std::min<DWORD>)(rerouted.size(), nSize - 1);
       _wcsnset(lpFilename, L'\0', len + 1);
       wcsncpy(lpFilename, rerouted.c_str(), len);
