@@ -47,21 +47,6 @@ extern WCHAR dataPathAbsoluteW[MAX_PATH];
 extern char dataPathAbsoluteA[MAX_PATH];
 
 
-/*bool FileExists(std::wstring filename)
-{
-  WIN32_FIND_DATAW findData;
-  ZeroMemory(&findData, sizeof(WIN32_FIND_DATAW));
-
-  HANDLE search = FindFirstFileExW(filename.c_str(), FindExInfoStandard, &findData, FindExSearchNameMatch, NULL, 0);
-  if (search == INVALID_HANDLE_VALUE) {
-    return false;
-  } else {
-    FindClose(search);
-    return true;
-  }
-}*/
-
-
 bool FileExists_reroute(const std::wstring &filename)
 {
   WIN32_FIND_DATAW findData;

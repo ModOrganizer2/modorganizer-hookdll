@@ -355,15 +355,15 @@ HANDLE WINAPI CreateFileW_rep(LPCWSTR lpFileName,
   WCHAR fullFileName[MAX_PATH];
   memset(fullFileName, '\0', MAX_PATH * sizeof(WCHAR));
   modInfo->getFullPathName(lpFileName, fullFileName, MAX_PATH);
-
   modInfo->checkPathAlternative(fullFileName);
+
+  bool rerouted = false;
 
   // newly created files in the data directory go to overwrite
   if (((dwCreationDisposition == CREATE_ALWAYS) || (dwCreationDisposition == CREATE_NEW)) &&
       (StartsWith(fullFileName, modInfo->getDataPathW().c_str()))) {
     // need to check if the file exists. If it does, act on the existing file, otherwise the behaviour is not transparent
     // if the regular call causes an error message and rerouted to
-    bool rerouted = false;
     rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName, false, &rerouted);
     if (!rerouted && !FileExists_reroute(lpFileName)) {
       std::wostringstream temp;
@@ -375,8 +375,6 @@ HANDLE WINAPI CreateFileW_rep(LPCWSTR lpFileName,
       modInfo->addOverwriteFile(rerouteFilename);
     }
   }
-
-  bool rerouted = false;
 
   if (rerouteFilename.length() == 0) {
     LPCWSTR baseName = GetBaseName(lpFileName);
@@ -397,7 +395,7 @@ HANDLE WINAPI CreateFileW_rep(LPCWSTR lpFileName,
   HANDLE result = CreateFileW_reroute(rerouteFilename.c_str(), dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
 
   if (rerouted) {
-    LOGDEBUG("createfile: %ls -> %ls (%x - %x) = %p (%d)", lpFileName, rerouteFilename.c_str(), dwDesiredAccess, dwCreationDisposition, result, ::GetLastError());
+    LOGDEBUG("createfile w: %ls -> %ls (%x - %x) = %p (%d)", lpFileName, rerouteFilename.c_str(), dwDesiredAccess, dwCreationDisposition, result, ::GetLastError());
   }
 
   return result;
@@ -646,8 +644,11 @@ BOOL WINAPI MoveFileExW_rep(LPCWSTR lpExistingFileName, LPCWSTR lpNewFileName, D
   }
 
   BOOL res = MoveFileExW_reroute(sourceReroute.c_str(), destinationReroute.c_str(), dwFlags);
+  modInfo->removeModFile(fullSourceName);
 
-  LOGDEBUG("move (ex) %ls to %ls - %d (%lu)", lpExistingFileName, lpNewFileName, res, ::GetLastError());
+  if (res) {
+    LOGDEBUG("move (ex) %ls to %ls - %d (%lu)", lpExistingFileName, lpNewFileName, res, ::GetLastError());
+  }
 
   return res;
 }
@@ -684,6 +685,9 @@ BOOL WINAPI MoveFileW_rep(LPCWSTR lpExistingFileName, LPCWSTR lpNewFileName)
   }
 
   BOOL res = MoveFileW_reroute(sourceReroute.c_str(), destinationReroute.c_str());
+  if (res) {
+    modInfo->removeModFile(fullSourceName);
+  }
   LOGDEBUG("move %ls to %ls: %d (%d)", sourceReroute.c_str(), destinationReroute.c_str(), res, ::GetLastError());
   return res;
 }
@@ -1046,7 +1050,6 @@ DWORD WINAPI GetPrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LP
     return GetPrivateProfileStringA_reroute(lpAppName, lpKeyName, lpDefault, lpReturnedString, nSize, lpFileName);
   }
 
-
   LPCSTR lastSlash = strrchr(lpFileName, '\\');
   if (lastSlash == NULL) {
     lastSlash = strrchr(lpFileName, '/');
@@ -1137,7 +1140,6 @@ DWORD WINAPI GetPrivateProfileStringW_rep(LPCWSTR lpAppName, LPCWSTR lpKeyName, 
                                           LPWSTR lpReturnedString, DWORD nSize, LPCWSTR lpFileName)
 {
   PROFILE();
-
   if (HookLock::isLocked()) return GetPrivateProfileStringW_reroute(lpAppName, lpKeyName, lpDefault, lpReturnedString, nSize, lpFileName);
 
   if (lpFileName != NULL) {
@@ -1195,6 +1197,7 @@ DWORD WINAPI GetPrivateProfileSectionNamesA_rep(LPSTR lpszReturnBuffer, DWORD nS
 DWORD WINAPI GetPrivateProfileSectionNamesW_rep(LPWSTR lpszReturnBuffer, DWORD nSize, LPCWSTR lpFileName)
 {
   PROFILE();
+
   if (lpFileName != NULL) {
     std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
     return GetPrivateProfileSectionNamesW_reroute(lpszReturnBuffer, nSize, rerouteFilename.c_str());
@@ -1755,13 +1758,15 @@ DWORD WINAPI GetModuleFileNameW_rep(HMODULE hModule, LPWSTR lpFilename, DWORD nS
     std::wstring rerouted = modInfo->reverseReroute(lpFilename, &isRerouted);
     if (isRerouted) {
       LOGDEBUG("get module file name %ls -> %ls: %x", lpFilename, rerouted.c_str(), res);
-      DWORD len = (std::min<DWORD>)(rerouted.size(), nSize - 1);
-      _wcsnset(lpFilename, L'\0', len + 1);
-      wcsncpy(lpFilename, rerouted.c_str(), len);
-      lpFilename[len] = L'\0';
-      res = len;
-      if (rerouted.size() > nSize) {
+      res = rerouted.size();
+      if (res >= nSize) {
         ::SetLastError(ERROR_INSUFFICIENT_BUFFER);
+        return 0UL;
+      }
+
+      if (res > 0) {
+        _wcsset(lpFilename, L'\0');
+        wcsncpy(lpFilename, rerouted.c_str(), res);
       }
     }
   }
