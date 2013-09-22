@@ -61,9 +61,6 @@ public:
 
   bool modExists(const std::wstring& modName);
 
-  void rewriteModList();
-  void appendMod(LPCWSTR modName);
-
   HANDLE findStart(LPCWSTR lpFileName,
                    FINDEX_INFO_LEVELS fInfoLevelId,
                    LPVOID lpFindFileData,

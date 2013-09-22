@@ -501,30 +501,6 @@ bool ModInfo::modExists(const std::wstring &modName)
   return false;
 }
 
-void ModInfo::rewriteModList()
-{
-#ifndef __GNUC__
-  size_t Converted;
-#endif
-  char modPath[MAX_PATH];
-  std::ofstream file(m_ModListPath.c_str(), std::ios::trunc);
-  for (std::vector<std::wstring>::iterator iter = m_ModList.begin(); iter != m_ModList.end(); ++iter) {
-#ifdef __GNUC__
-    wcstombs(modPath, iter->c_str(), MAX_PATH);
-#else
-    wcstombs_s(&Converted, modPath, MAX_PATH, iter->c_str(), _TRUNCATE);
-#endif
-    file << modPath << std::endl;
-  }
-}
-
-
-void ModInfo::appendMod(LPCWSTR modName)
-{
-  m_ModList.push_back(modName);
-  rewriteModList();
-}
-
 
 std::wstring ModInfo::getCurrentDirectory()
 {
