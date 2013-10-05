@@ -47,6 +47,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include "obse.h"
 #include <boost/scoped_array.hpp>
 #include <boost/preprocessor.hpp>
+#include <boost/assign.hpp>
 #include <Shellapi.h>
 
 
@@ -122,6 +123,11 @@ std::map<std::string, std::string> bsaMap;
 
 std::set<std::string> iniFilesA;
 
+// processes we never want to hook
+std::set<std::string> processBlacklistA;
+std::set<std::wstring> processBlacklistW;
+
+
 //static const int MAX_PATH_UNICODE = 32768;
 static const int MAX_PATH_UNICODE = 256;
 
@@ -186,11 +192,27 @@ BOOL WINAPI CreateProcessA_rep(LPCSTR lpApplicationName,
   PROFILE();
   BOOL susp = dwCreationFlags & CREATE_SUSPENDED;
   DWORD flags = dwCreationFlags | CREATE_SUSPENDED;
-  LOGDEBUG("create process (a) %s - %s (in %s)",
+  bool compiler = false;
+  bool blacklisted = false;
+
+  if (lpApplicationName != NULL) {
+    char buffer[MAX_PATH];
+    LPSTR filePart = NULL;
+    if ((::GetFullPathNameA(lpApplicationName, MAX_PATH, buffer, &filePart) != 0) && (filePart != NULL)) {
+      for (char *pos = filePart; *pos != '\0'; ++pos) {
+        *pos = tolower(*pos);
+      }
+      if (processBlacklistA.find(filePart) != processBlacklistA.end()) {
+        blacklisted = true;
+      }
+    }
+  }
+
+  LOGDEBUG("create process (a) %s - %s (in %s) - %s",
            lpApplicationName != NULL ? lpApplicationName : "null",
            lpCommandLine != NULL ? lpCommandLine : "null",
-           lpCurrentDirectory != NULL ? lpCurrentDirectory : "null");
-  bool compiler = false;
+           lpCurrentDirectory != NULL ? lpCurrentDirectory : "null",
+           (blacklisted || compiler) ? "NOT hooking" : "hooking");
 
   if ((lpApplicationName == NULL) && (lpCommandLine != NULL)) {
     std::tr1::cmatch match;
@@ -234,7 +256,7 @@ BOOL WINAPI CreateProcessA_rep(LPCSTR lpApplicationName,
   }
 
   try {
-    if (!compiler) {
+    if (!compiler && !blacklisted) {
       char hookPath[MAX_PATH];
       ::GetModuleFileNameA(dllModule, hookPath, MAX_PATH);
       injectDLL(lpProcessInformation->hProcess, lpProcessInformation->hThread,
@@ -265,13 +287,28 @@ BOOL WINAPI CreateProcessW_rep(LPCWSTR lpApplicationName,
 {
   PROFILE();
 
-  LOGDEBUG("create process (w) %ls - %ls (in %ls)",
-           lpApplicationName != NULL ? lpApplicationName : L"null",
-           lpCommandLine != NULL ? lpCommandLine : L"null",
-           lpCurrentDirectory != NULL ? lpCurrentDirectory : L"null");
-
   BOOL susp = dwCreationFlags & CREATE_SUSPENDED;
   DWORD flags = dwCreationFlags | CREATE_SUSPENDED;
+  bool blacklisted = false;
+
+  if (lpApplicationName != NULL) {
+    wchar_t buffer[MAX_PATH];
+    LPWSTR filePart = NULL;
+    if ((::GetFullPathNameW(lpApplicationName, MAX_PATH, buffer, &filePart) != 0) && (filePart != NULL)) {
+      for (wchar_t *pos = filePart; *pos != L'\0'; ++pos) {
+        *pos = tolower(*pos);
+      }
+      if (processBlacklistW.find(filePart) != processBlacklistW.end()) {
+        blacklisted = true;
+      }
+    }
+  }
+
+  LOGDEBUG("create process (w) %ls - %ls (in %ls) - %s",
+           lpApplicationName != NULL ? lpApplicationName : L"null",
+           lpCommandLine != NULL ? lpCommandLine : L"null",
+           lpCurrentDirectory != NULL ? lpCurrentDirectory : L"null",
+           blacklisted ? "NOT hooking" : "hooking");
 
   std::wstring reroutedApplicationName;
   if (lpApplicationName != NULL) {
@@ -293,10 +330,12 @@ BOOL WINAPI CreateProcessW_rep(LPCWSTR lpApplicationName,
   }
 
   try {
-    char hookPath[MAX_PATH];
-    ::GetModuleFileNameA(dllModule, hookPath, MAX_PATH);
-    injectDLL(lpProcessInformation->hProcess, lpProcessInformation->hThread,
-              hookPath, modInfo->getProfileName(), sLogLevel);
+    if (!blacklisted) {
+      char hookPath[MAX_PATH];
+      ::GetModuleFileNameA(dllModule, hookPath, MAX_PATH);
+      injectDLL(lpProcessInformation->hProcess, lpProcessInformation->hThread,
+                hookPath, modInfo->getProfileName(), sLogLevel);
+    }
   } catch (const std::exception &e) {
     Logger::Instance().error("failed to inject into %ls: %s", lpApplicationName, e.what());
   }
@@ -1757,7 +1796,7 @@ DWORD WINAPI GetModuleFileNameW_rep(HMODULE hModule, LPWSTR lpFilename, DWORD nS
     bool isRerouted = false;
     std::wstring rerouted = modInfo->reverseReroute(lpFilename, &isRerouted);
     if (isRerouted) {
-      LOGDEBUG("get module file name %ls -> %ls: %x", lpFilename, rerouted.c_str(), res);
+      LOGDEBUG("get module file name %ls -> %ls: %d", lpFilename, rerouted.c_str(), res);
       res = rerouted.size();
       if (res >= nSize) {
         ::SetLastError(ERROR_INSUFFICIENT_BUFFER);
@@ -1767,6 +1806,7 @@ DWORD WINAPI GetModuleFileNameW_rep(HMODULE hModule, LPWSTR lpFilename, DWORD nS
       if (res > 0) {
         _wcsset(lpFilename, L'\0');
         wcsncpy(lpFilename, rerouted.c_str(), res);
+        lpFilename[res] = L'\0';
       }
     }
   }
@@ -2003,6 +2043,14 @@ BOOL SetUpBSAMap()
 }
 
 
+void SetUpBlacklist()
+{
+  // processes we never want to hook. lower-case characters only!
+  processBlacklistA = boost::assign::list_of("steam.exe")("chrome.exe")("firefox.exe");
+  processBlacklistW = boost::assign::list_of(L"steam.exe")(L"chrome.exe")(L"firefox.exe");
+}
+
+
 void RemoveHooks()
 {
   for (std::vector<ApiHook*>::iterator iter = hooks.begin(); iter != hooks.end(); ++iter) {
@@ -2189,6 +2237,8 @@ BOOL Init(int logLevel, const wchar_t *profileName)
     Logger::Instance().error("failed to set up list of bsas");
     return FALSE;
   }
+
+  SetUpBlacklist();
 
   {
     wchar_t cwd[MAX_PATH];
