@@ -50,7 +50,7 @@ public:
   void addAlternativePath(const std::wstring &path);
 
   void addModDirectory(const std::wstring &modPath);
-  void addModFile(const std::wstring &fileName);
+//  void addModFile(const std::wstring &fileName);
   void addOverwriteFile(const std::wstring &fileName);
 
   /**

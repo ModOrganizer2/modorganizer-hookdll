@@ -398,7 +398,7 @@ void ModInfo::addModDirectory(const std::wstring& modPath)
   m_DirectoryStructure.addFromOrigin(name, modPath, static_cast<int>(m_ModList.size()));
 }
 
-
+/*
 void ModInfo::addModFile(const std::wstring &fileName)
 {
 #ifdef DEBUG_LOG
@@ -413,7 +413,7 @@ void ModInfo::addModFile(const std::wstring &fileName)
   FilesOrigin& origin = m_DirectoryStructure.getOriginByName(fileName);
   m_DirectoryStructure.insertFile(fileName, origin, time);
 }
-
+*/
 
 void ModInfo::addOverwriteFile(const std::wstring &fileName)
 {
