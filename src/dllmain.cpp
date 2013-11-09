@@ -49,6 +49,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include <boost/preprocessor.hpp>
 #include <boost/assign.hpp>
 #include <Shellapi.h>
+#include <Psapi.h>
 
 
 using namespace MOShared;
@@ -783,6 +784,30 @@ static void GetSectionRange(DWORD *start, DWORD *end, HANDLE moduleHandle)
     ++sectionHeader;
   }
 }
+
+static std::wstring GetSectionName(PVOID address)
+{
+  HANDLE process = ::GetCurrentProcess();
+  HMODULE modules[1024];
+  DWORD required;
+  if (::EnumProcessModules(process, modules, sizeof(modules), &required)) {
+    for (DWORD i = 0; i < (std::min<DWORD>(1024UL, required) / sizeof(HMODULE)); ++i) {
+      DWORD start, end;
+      GetSectionRange(&start, &end, modules[i]);
+      if (((DWORD)address > start) || ((DWORD)address < end)) {
+        wchar_t modName[MAX_PATH];
+
+        if (::GetModuleFileNameExW(GetCurrentProcess(), modules[i], modName, MAX_PATH)) {
+          return std::wstring(modName);
+        } else {
+          return std::wstring(L"unknown");
+        }
+      }
+    }
+  }
+  return std::wstring(L"unknown");
+}
+
 
 #pragma optimize( "", off )
 
@@ -2068,7 +2093,6 @@ LONG WINAPI VEHandler(PEXCEPTION_POINTERS exceptionPtrs)
     // don't want to break on non-critical exceptions. 0xe06d7363 indicates a C++ exception. why are those marked non-continuable?
     return EXCEPTION_CONTINUE_SEARCH;
   }*/
-
   if (exceptionPtrs->ExceptionRecord->ExceptionCode != 0xC0000005) {
     // don't want to break on non-critical errors. The above block didn't work well, crashes
     // happened for exceptions that wouldn't have been a problem
@@ -2080,8 +2104,9 @@ LONG WINAPI VEHandler(PEXCEPTION_POINTERS exceptionPtrs)
 
   if (((DWORD)exceptionPtrs->ExceptionRecord->ExceptionAddress < start) ||
       ((DWORD)exceptionPtrs->ExceptionRecord->ExceptionAddress > end)) {
-    Logger::Instance().info("Windows Exception (%x). exception did not originate from Mod Organizer. Last hooked call: %s",
-                            exceptionPtrs->ExceptionRecord->ExceptionCode, s_LastFunction);
+    std::wstring modName = GetSectionName(exceptionPtrs->ExceptionRecord->ExceptionAddress);
+    Logger::Instance().info("Windows Exception (%x). Origin: \"%ls\". Last hooked call: %s",
+                            exceptionPtrs->ExceptionRecord->ExceptionCode, modName.c_str(), s_LastFunction);
     return EXCEPTION_CONTINUE_SEARCH;
   } else {
     Logger::Instance().error("Windows Exception (%x). Last hooked call: %s", exceptionPtrs->ExceptionRecord->ExceptionCode, s_LastFunction);
