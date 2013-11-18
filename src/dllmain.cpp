@@ -2078,11 +2078,13 @@ void SetUpBlacklist()
 
 void RemoveHooks()
 {
-  for (std::vector<ApiHook*>::iterator iter = hooks.begin(); iter != hooks.end(); ++iter) {
-    delete *iter;
+  if (hooks.size() > 0) {
+    for (std::vector<ApiHook*>::iterator iter = hooks.begin(); iter != hooks.end(); ++iter) {
+      delete *iter;
+    }
+    hooks.clear();
+    LOGDEBUG("hooks removed");
   }
-  hooks.clear();
-  LOGDEBUG("hooks removed");
 }
 
 
