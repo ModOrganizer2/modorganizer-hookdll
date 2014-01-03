@@ -96,7 +96,7 @@ ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirecto
   }
 
   m_DataPathAbsoluteA = ToString(m_DataPathAbsoluteW, false);
-
+  Logger::Instance().info("data path is %ls", m_DataPathAbsoluteW.c_str());
   HANDLE dataDir = ::CreateFileW(m_DataPathAbsoluteW.c_str(), GENERIC_READ, FILE_SHARE_READ,
                                  NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
   if (dataDir == INVALID_HANDLE_VALUE) {
@@ -117,7 +117,7 @@ ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirecto
           finalPath += 4;
         }
         if (_wcsicmp(finalPath, m_DataPathAbsoluteW.c_str()) != 0) {
-          Logger::Instance().info("data path may be a junction to %ls", finalPath);
+          Logger::Instance().info("data path may also be a junction to %ls", finalPath);
           m_DataPathAbsoluteAlternativeW = finalPath;
 
         }
@@ -191,6 +191,9 @@ ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirecto
                                       index);
       success = ::FindNextFileW(search, &findData);
     }
+
+    m_UpdateOriginIDs.push_back(m_DirectoryStructure.getOriginByName(*modIter).getID());
+    m_UpdateHandles.push_back(::FindFirstChangeNotificationW(temp.str().c_str(), TRUE, FILE_NOTIFY_CHANGE_FILE_NAME));
   }
 
   m_DirectoryStructure.addFromOrigin(L"overwrite", GameInfo::instance().getOverwriteDir(), index);
@@ -213,34 +216,51 @@ ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirecto
     ::FindClose(search);
   }
 
-  m_UpdateNotification = ::FindFirstChangeNotificationW(GameInfo::instance().getOverwriteDir().c_str(), TRUE, FILE_NOTIFY_CHANGE_FILE_NAME);
-
+  m_UpdateOriginIDs.push_back(m_DirectoryStructure.getOriginByName(L"overwrite").getID());
+  m_UpdateHandles.push_back(::FindFirstChangeNotificationW(GameInfo::instance().getOverwriteDir().c_str(), TRUE, FILE_NOTIFY_CHANGE_FILE_NAME));
   // dumpDirectoryStructure(&m_DirectoryStructure, 0);
 }
 
 
 ModInfo::~ModInfo()
 {
-  ::FindCloseChangeNotification(m_UpdateNotification);
+  for (auto iter = m_UpdateHandles.begin(); iter != m_UpdateHandles.end(); ++iter) {
+    ::FindCloseChangeNotification(*iter);
+  }
 }
 
 
 bool ModInfo::detectOverwriteChange()
 {
-  if (::WaitForSingleObject(m_UpdateNotification, 0) == WAIT_OBJECT_0) {
-    if (::FindNextChangeNotification(m_UpdateNotification)) {
-      try {
-        FilesOrigin &origin = m_DirectoryStructure.getOriginByName(L"overwrite");
-        origin.enable(false);
-        HookLock lock; // addFromOrigin uses FindFirstFileEx, rerouting that could be disastrous
-        m_DirectoryStructure.addFromOrigin(L"overwrite", GameInfo::instance().getOverwriteDir(), origin.getPriority());
-        return true;
-      } catch (const std::exception &e) {
-        Logger::Instance().error("failed to update overwrite directory: %s", e.what());
+  std::set<int> modifiedOrigins;
+
+  for (size_t i = 0; i < m_UpdateHandles.size(); i += MAXIMUM_WAIT_OBJECTS) {
+    DWORD res = ::WaitForMultipleObjects(std::min<int>(MAXIMUM_WAIT_OBJECTS, m_UpdateHandles.size() - i), m_UpdateHandles.data() + i, FALSE, 0);
+    while ((res != WAIT_TIMEOUT) && (res != WAIT_FAILED)) {
+      size_t offset = res - WAIT_OBJECT_0 + i;
+      if (::FindNextChangeNotification(m_UpdateHandles[offset])) {
+        if (offset < m_UpdateOriginIDs.size()) {
+          modifiedOrigins.insert(offset);
+        }
       }
+
+      res = ::WaitForMultipleObjects(std::min<int>(MAXIMUM_WAIT_OBJECTS, m_UpdateHandles.size() - i), m_UpdateHandles.data() + i, FALSE, 0);
     }
   }
-  return false;
+
+  for (auto iter = modifiedOrigins.begin(); iter != modifiedOrigins.end(); ++iter) {
+    int originId = m_UpdateOriginIDs[*iter];
+    try {
+      FilesOrigin &origin = m_DirectoryStructure.getOriginByID(originId);
+      origin.enable(false);
+      HookLock lock; // addFromOrigin uses FindFirstFileEx, rerouting that could be disastrous
+      m_DirectoryStructure.addFromOrigin(origin.getName(), origin.getPath(), origin.getPriority());
+    } catch (const std::exception &e) {
+      Logger::Instance().error("failed to update mod directory: %s", e.what());
+    }
+  }
+
+  return modifiedOrigins.size() > 0;
 }
 
 
@@ -290,7 +310,6 @@ bool DirectoryExists(const std::wstring &directory)
     return false;
   }
 }
-
 
 
 bool ModInfo::setCwd(const std::wstring &currentDirectory)
@@ -398,37 +417,44 @@ void ModInfo::addModDirectory(const std::wstring& modPath)
   m_DirectoryStructure.addFromOrigin(name, modPath, static_cast<int>(m_ModList.size()));
 }
 
-/*
+
 void ModInfo::addModFile(const std::wstring &fileName)
 {
-#ifdef DEBUG_LOG
-  size_t offset = m_ModsPath.length() + m_ModList.rbegin()->length() + 2; // 2 (back-)slashes
-  LOGDEBUG("add mod file %ls (%ls)", fileName.c_str(), fileName.substr(offset).c_str());
-#endif // DEBUG_LOG
-  FILETIME time;
-  SYSTEMTIME now;
-  GetSystemTime(&now);
-  SystemTimeToFileTime(&now, &time);
-
-  FilesOrigin& origin = m_DirectoryStructure.getOriginByName(fileName);
-  m_DirectoryStructure.insertFile(fileName, origin, time);
+  if (StartsWith(fileName.c_str(), m_ModsPath.c_str())) {
+    wchar_t buffer[MAX_PATH];
+    LPCWSTR modName = fileName.c_str() + m_ModsPath.length() + 1;
+    size_t len = wcscspn(modName, L"\\/");
+    wcsncpy(buffer, modName, len);
+    buffer[len] = L'\0';
+    addModFile(buffer, fileName);
+  } else if (StartsWith(fileName.c_str(), GameInfo::instance().getOverwriteDir().c_str())) {
+    addOverwriteFile(fileName);
+  } else {
+    Logger::Instance().error("not a mod directory: %ls", fileName.c_str());
+  }
 }
-*/
+
 
 void ModInfo::addOverwriteFile(const std::wstring &fileName)
 {
-  size_t offset = GameInfo::instance().getOverwriteDir().length() + 1;
+  addModFile(L"overwrite", fileName);
+}
+
+
+void ModInfo::addModFile(LPCWSTR originName, const std::wstring &fileName)
+{
+  FilesOrigin &origin = m_DirectoryStructure.getOriginByName(originName);
+  size_t offset = origin.getPath().length() + 1;
   while ((fileName[offset] == '\\') || (fileName[offset] == '/')) {
     ++offset;
   }
 #ifdef DEBUG_LOG
-  LOGDEBUG("add overwrite file %ls (%ls)", fileName.c_str(), fileName.substr(offset).c_str());
+  LOGDEBUG("add mod file %ls (%ls)", fileName.c_str(), fileName.substr(offset).c_str());
 #endif // DEBUG_LOG
   SYSTEMTIME now;
   GetSystemTime(&now);
   FILETIME time;
   SystemTimeToFileTime(&now, &time);
-  FilesOrigin &origin = m_DirectoryStructure.getOriginByName(L"overwrite");
   m_DirectoryStructure.insertFile(fileName.substr(offset), origin, time);
 }
 
@@ -829,38 +855,3 @@ std::wstring ModInfo::getPath(LPCWSTR originalName, size_t offset, int &origin)
     return fullPath.str();
   }
 }
-
-/* BROKEN AND OBSOLETE
-std::wstring ModInfo::getValidPath(LPCWSTR path, size_t offset)
-{
-  WCHAR buffer[MAX_PATH + 1];
-  memset(buffer, 0, sizeof(WCHAR) * (MAX_PATH + 1));
-
-  LPCWSTR endPtr = path + wcslen(path);
-
-  std::wostringstream result;
-  offset += wcsspn(path + offset, L"\\/");
-  wcsncpy(buffer, path, offset);
-  result << buffer;
-  path += offset;
-
-  DirectoryEntry *dirEntry = &m_DirectoryStructure;
-  bool first = true;
-
-  while ((dirEntry != NULL) && (path < endPtr)) {
-    size_t len = wcscspn(path, L"\\/");
-    memset(buffer, 0, sizeof(WCHAR) + (MAX_PATH + 1));
-    wcsncpy(buffer, path, len);
-    dirEntry = dirEntry->findSubDirectory(buffer);
-    if (dirEntry != NULL) {
-      if (!first) {
-        result << "\\";
-      } else {
-        first = false;
-      }
-      result << buffer;
-    }
-    path += len + 1;
-  }
-  return result.str();
-}*/

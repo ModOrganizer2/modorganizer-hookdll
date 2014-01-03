@@ -50,8 +50,9 @@ public:
   void addAlternativePath(const std::wstring &path);
 
   void addModDirectory(const std::wstring &modPath);
-//  void addModFile(const std::wstring &fileName);
+  void addModFile(const std::wstring &fileName);
   void addOverwriteFile(const std::wstring &fileName);
+  void addModFile(LPCWSTR originName, const std::wstring &fileName);
 
   /**
    * removes the specified file from the directory structure
@@ -165,7 +166,9 @@ private:
 
   SearchesMap m_Searches;
 
-  HANDLE m_UpdateNotification;
+//  HANDLE m_UpdateNotification;
+  std::vector<int> m_UpdateOriginIDs;
+  std::vector<HANDLE> m_UpdateHandles;
 
   int m_DataOrigin;
 
