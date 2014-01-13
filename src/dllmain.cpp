@@ -48,8 +48,11 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include <boost/scoped_array.hpp>
 #include <boost/preprocessor.hpp>
 #include <boost/assign.hpp>
+#include <boost/algorithm/string.hpp>
+#include <boost/thread/mutex.hpp>
 #include <Shellapi.h>
 #include <Psapi.h>
+#include <tuple>
 
 
 using namespace MOShared;
@@ -112,6 +115,8 @@ GetFileVersionInfoExW_type GetFileVersionInfoExW_reroute = NULL; // not availabl
 GetFileVersionInfoSizeW_type GetFileVersionInfoSizeW_reroute = GetFileVersionInfoSizeW;
 GetModuleFileNameW_type GetModuleFileNameW_reroute = GetModuleFileNameW;
 
+NtQueryDirectoryFile_type NtQueryDirectoryFile_reroute;
+
 
 ModInfo *modInfo = NULL;
 
@@ -135,6 +140,12 @@ static const int MAX_PATH_UNICODE = 256;
 HANDLE instanceMutex = INVALID_HANDLE_VALUE;
 HMODULE dllModule = NULL;
 PVOID exceptionHandler = NULL;
+
+
+boost::mutex queryMutex;
+std::map<HANDLE, std::wstring> directoryCFHandles;
+std::map<HANDLE, std::deque<std::vector<uint8_t>>> qdfData;
+//std::map<HANDLE, std::deque<std::tr1::tuple<HANDLE, ULONG, bool>>> qdfData;
 
 int sLogLevel = 0;
 
@@ -434,6 +445,13 @@ HANDLE WINAPI CreateFileW_rep(LPCWSTR lpFileName,
 
   HANDLE result = CreateFileW_reroute(rerouteFilename.c_str(), dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
 
+  if (   StartsWith(fullFileName, modInfo->getDataPathW().c_str())
+      && (result != INVALID_HANDLE_VALUE)
+      && (dwFlagsAndAttributes == FILE_FLAG_BACKUP_SEMANTICS)) {
+    LOGDEBUG("handle opened with backup semantics: %ls", lpFileName);
+    directoryCFHandles[result] = std::wstring(fullFileName);
+  }
+
   if (rerouted) {
     LOGDEBUG("createfile w: %ls -> %ls (%x - %x) = %p (%d)", lpFileName, rerouteFilename.c_str(), dwDesiredAccess, dwCreationDisposition, result, ::GetLastError());
   }
@@ -462,6 +480,18 @@ HANDLE WINAPI CreateFileA_rep(LPCSTR lpFileName,
 
 BOOL WINAPI CloseHandle_rep(HANDLE hObject)
 {
+  {
+    auto iter = directoryCFHandles.find(hObject);
+    if (iter != directoryCFHandles.end()) {
+      directoryCFHandles.erase(iter);
+    }
+  }
+  {
+    auto iter = qdfData.find(hObject);
+    if (iter != qdfData.end()) {
+      qdfData.erase(iter);
+    }
+  }
   return CloseHandle_reroute(hObject);
 }
 
@@ -546,6 +576,7 @@ HANDLE WINAPI FindFirstFileExW_rep(LPCWSTR lpFileName,
   if (HookLock::isLocked() || (lpFileName == NULL)) {
     return FindFirstFileExW_reroute(lpFileName, fInfoLevelId, lpFindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags);
   }
+
   LPCWSTR baseName = GetBaseName(lpFileName);
 
   size_t pathLen = baseName - lpFileName;
@@ -1838,6 +1869,438 @@ DWORD WINAPI GetModuleFileNameW_rep(HMODULE hModule, LPWSTR lpFilename, DWORD nS
   return res;
 }
 
+typedef struct _IO_STATUS_BLOCK {
+    union {
+        NTSTATUS Status;
+        PVOID Pointer;
+    } DUMMYUNIONNAME;
+
+    ULONG_PTR Information;
+} IO_STATUS_BLOCK, *PIO_STATUS_BLOCK;
+
+typedef struct _FILE_DIRECTORY_INFORMATION {
+    ULONG NextEntryOffset;
+    ULONG FileIndex;
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER EndOfFile;
+    LARGE_INTEGER AllocationSize;
+    ULONG FileAttributes;
+    ULONG FileNameLength;
+    WCHAR FileName[1];
+} FILE_DIRECTORY_INFORMATION, *PFILE_DIRECTORY_INFORMATION;
+
+typedef struct _FILE_FULL_DIR_INFORMATION {
+    ULONG NextEntryOffset;
+    ULONG FileIndex;
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER EndOfFile;
+    LARGE_INTEGER AllocationSize;
+    ULONG FileAttributes;
+    ULONG FileNameLength;
+    ULONG EaSize;
+    WCHAR FileName[1];
+} FILE_FULL_DIR_INFORMATION, *PFILE_FULL_DIR_INFORMATION;
+
+typedef struct _FILE_ID_FULL_DIR_INFORMATION {
+    ULONG NextEntryOffset;
+    ULONG FileIndex;
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER EndOfFile;
+    LARGE_INTEGER AllocationSize;
+    ULONG FileAttributes;
+    ULONG FileNameLength;
+    ULONG EaSize;
+    LARGE_INTEGER FileId;
+    WCHAR FileName[1];
+} FILE_ID_FULL_DIR_INFORMATION, *PFILE_ID_FULL_DIR_INFORMATION;
+
+typedef struct _FILE_BOTH_DIR_INFORMATION {
+    ULONG NextEntryOffset;
+    ULONG FileIndex;
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER EndOfFile;
+    LARGE_INTEGER AllocationSize;
+    ULONG FileAttributes;
+    ULONG FileNameLength;
+    ULONG EaSize;
+    CCHAR ShortNameLength;
+    WCHAR ShortName[12];
+    WCHAR FileName[1];
+} FILE_BOTH_DIR_INFORMATION, *PFILE_BOTH_DIR_INFORMATION;
+
+typedef struct _FILE_ID_BOTH_DIR_INFORMATION {
+    ULONG NextEntryOffset;
+    ULONG FileIndex;
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER EndOfFile;
+    LARGE_INTEGER AllocationSize;
+    ULONG FileAttributes;
+    ULONG FileNameLength;
+    ULONG EaSize;
+    CCHAR ShortNameLength;
+    WCHAR ShortName[12];
+    LARGE_INTEGER FileId;
+    WCHAR FileName[1];
+} FILE_ID_BOTH_DIR_INFORMATION, *PFILE_ID_BOTH_DIR_INFORMATION;
+
+typedef struct _FILE_NAMES_INFORMATION {
+    ULONG NextEntryOffset;
+    ULONG FileIndex;
+    ULONG FileNameLength;
+    WCHAR FileName[1];
+} FILE_NAMES_INFORMATION, *PFILE_NAMES_INFORMATION;
+
+typedef struct _FILE_OBJECTID_INFORMATION {
+  LONGLONG FileReference;
+  UCHAR    ObjectId[16];
+  union {
+    struct {
+      UCHAR BirthVolumeId[16];
+      UCHAR BirthObjectId[16];
+      UCHAR DomainId[16];
+    };
+    UCHAR  ExtendedInfo[48];
+  };
+} FILE_OBJECTID_INFORMATION, *PFILE_OBJECTID_INFORMATION;
+
+typedef struct _FILE_REPARSE_POINT_INFORMATION {
+  LONGLONG FileReference;
+  ULONG    Tag;
+} FILE_REPARSE_POINT_INFORMATION, *PFILE_REPARSE_POINT_INFORMATION;
+
+#define STATUS_SUCCESS ((NTSTATUS)0x00000000L)
+#define STATUS_BUFFER_OVERFLOW ((NTSTATUS)0x80000005L)
+#define STATUS_NO_MORE_FILES ((NTSTATUS)0x80000006L)
+
+
+enum _MY_FILE_INFORMATION_CLASS {
+    FileDirectoryInformation        = 1,
+    FileFullDirectoryInformation    = 2,
+    FileBothDirectoryInformation    = 3,
+    FileNamesInformation            = 12,
+    FileObjectIdInformation         = 29,
+    FileReparsePointInformation     = 33,
+    FileIdBothDirectoryInformation  = 37,
+    FileIdFullDirectoryInformation  = 38
+};
+
+ULONG StructMinSize(FILE_INFORMATION_CLASS infoClass)
+{
+  switch (infoClass) {
+    case FileBothDirectoryInformation: return sizeof(FILE_BOTH_DIR_INFORMATION);
+    case FileDirectoryInformation: return sizeof(FILE_DIRECTORY_INFORMATION);
+    case FileFullDirectoryInformation: return sizeof(FILE_FULL_DIR_INFORMATION);
+    case FileIdBothDirectoryInformation: return sizeof(FILE_ID_BOTH_DIR_INFORMATION);
+    case FileIdFullDirectoryInformation: return sizeof(FILE_ID_FULL_DIR_INFORMATION);
+    case FileNamesInformation: return sizeof(FILE_NAMES_INFORMATION);
+    case FileObjectIdInformation: return sizeof(FILE_OBJECTID_INFORMATION);
+    case FileReparsePointInformation: return sizeof(FILE_REPARSE_POINT_INFORMATION);
+    default: return 0;
+  }
+}
+
+void GetInfoData(LPVOID address, FILE_INFORMATION_CLASS infoClass, ULONG &offset, std::wstring &fileName)
+{
+  switch (infoClass) {
+    case FileBothDirectoryInformation: {
+      FILE_BOTH_DIR_INFORMATION *info = reinterpret_cast<FILE_BOTH_DIR_INFORMATION*>(address);
+      offset = info->NextEntryOffset;
+      fileName = std::wstring(info->FileName, info->FileNameLength / sizeof(WCHAR));
+    } break;
+    case FileDirectoryInformation: {
+      FILE_DIRECTORY_INFORMATION *info = reinterpret_cast<FILE_DIRECTORY_INFORMATION*>(address);
+      offset = info->NextEntryOffset;
+      fileName = std::wstring(info->FileName, info->FileNameLength / sizeof(WCHAR));
+    } break;
+    case FileNamesInformation: {
+      FILE_NAMES_INFORMATION *info = reinterpret_cast<FILE_NAMES_INFORMATION*>(address);
+      offset = info->NextEntryOffset;
+      fileName = std::wstring(info->FileName, info->FileNameLength / sizeof(WCHAR));
+    } break;
+    case FileIdFullDirectoryInformation: {
+      FILE_ID_FULL_DIR_INFORMATION *info = reinterpret_cast<FILE_ID_FULL_DIR_INFORMATION*>(address);
+      offset = info->NextEntryOffset;
+      fileName = std::wstring(info->FileName, info->FileNameLength / sizeof(WCHAR));
+    } break;
+    case FileFullDirectoryInformation: {
+      FILE_FULL_DIR_INFORMATION *info = reinterpret_cast<FILE_FULL_DIR_INFORMATION*>(address);
+      offset = info->NextEntryOffset;
+      fileName = std::wstring(info->FileName, info->FileNameLength / sizeof(WCHAR));
+    } break;
+    case FileIdBothDirectoryInformation: {
+      FILE_ID_BOTH_DIR_INFORMATION *info = reinterpret_cast<FILE_ID_BOTH_DIR_INFORMATION*>(address);
+      offset = info->NextEntryOffset;
+      fileName = std::wstring(info->FileName, info->FileNameLength / sizeof(WCHAR));
+    } break;
+    case FileObjectIdInformation: {
+      offset = sizeof(FILE_OBJECTID_INFORMATION);
+    } break;
+    case FileReparsePointInformation: {
+      offset = sizeof(FILE_REPARSE_POINT_INFORMATION);
+    } break;
+    default: {
+      offset = ULONG_MAX;
+    } break;
+  }
+}
+
+
+int NextDividableBy(int number, int divider)
+{
+  return static_cast<int>(ceilf(static_cast<float>(number) / static_cast<float>(divider)) * divider);
+}
+
+
+
+void addNtSearchData(const std::wstring &localPath,
+                     PUNICODE_STRING FileName, FILE_INFORMATION_CLASS FileInformationClass,
+                     boost::scoped_array<uint8_t> &buffer, ULONG bufferSize,
+                     std::pair<HANDLE, std::deque<std::vector<uint8_t>>> &result, std::set<std::wstring> &foundFiles)
+{
+  // try to open the directory handle. If this doesn't work, the mod contains no such directory
+  HANDLE hdl = ::CreateFileW_reroute(localPath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+  if (hdl != INVALID_HANDLE_VALUE) {
+    IO_STATUS_BLOCK status;
+    NTSTATUS res = NtQueryDirectoryFile_reroute(hdl, NULL, NULL, NULL, &status, buffer.get(), bufferSize, FileInformationClass, FALSE, FileName, FALSE);
+    while ((res == STATUS_SUCCESS) && (status.Information > 0)) {
+      uint8_t *pos = buffer.get();
+      ULONG totalOffset = 0;
+      while (totalOffset < status.Information) {
+        ULONG offset;
+        std::wstring fileName;
+        GetInfoData(pos, FileInformationClass, offset, fileName);
+
+        bool add = true;
+        if (fileName.length() > 0) {
+          std::wstring fileNameL = fileName;
+          boost::algorithm::to_lower(fileNameL);
+          auto res = foundFiles.insert(fileNameL);
+          add = res.second;
+        }
+        ULONG size = offset != 0 ? offset : (status.Information - totalOffset);
+        if (add) {
+          result.second.push_back(std::vector<uint8_t>(pos, pos + size));
+        }
+
+        pos += size;
+        totalOffset += size;
+      }
+
+      res = NtQueryDirectoryFile_reroute(hdl, NULL, NULL, NULL, &status, buffer.get(), bufferSize, FileInformationClass, FALSE, FileName, FALSE);
+    }
+  }
+}
+
+// TODO: This doesn't report errors in the hooked path. It doesn't handle the Apc routine. It doesn't handle the corner
+// case where, on first call, the buffer is allowed to be smaller than the data element as long as it's long enough to receive the
+// fixed block size. It doesn't signal IO Completion objects. It ... augh fuck this function is complicated...
+NTSTATUS WINAPI NtQueryDirectoryFile_rep(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
+                 PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
+                 ULONG Length, FILE_INFORMATION_CLASS FileInformationClass, BOOLEAN ReturnSingleEntry,
+                 PUNICODE_STRING FileName, BOOLEAN RestartScan)
+{
+  if (   (directoryCFHandles.find(FileHandle) != directoryCFHandles.end())
+      && (ApcRoutine == NULL)) {   // this hook doesn't support asynchronous operation
+    LOGDEBUG("%x ntquerydirectoryfile called with a rerouted handle from CreateFile (%d) (%d) (%.*ls)",
+        FileHandle, ReturnSingleEntry, FileInformationClass, FileName != NULL ? FileName->Length : 4, FileName != NULL ? FileName->Buffer : L"null");
+    if (RestartScan) {
+      // drop our own cache data on rescan
+      queryMutex.lock();
+      auto iter = qdfData.find(FileHandle);
+      if (iter != qdfData.end()) {
+        qdfData.erase(iter);
+      }
+      queryMutex.unlock();
+    }
+    if (qdfData.find(FileHandle) == qdfData.end()) {
+      // no data yet, query it
+      std::set<std::wstring> foundFiles;
+
+      std::pair<HANDLE, std::deque<std::vector<uint8_t>>> result(FileHandle, std::deque<std::vector<uint8_t>>());
+
+      std::wstring relativePath = directoryCFHandles[FileHandle].size() > modInfo->getDataPathW().size()
+                                      ? directoryCFHandles[FileHandle].substr(modInfo->getDataPathW().length() + 1)
+                                      : std::wstring();
+
+
+      // we use one large buffer and copy the required section to newly allocated parts.
+      ULONG bufferSize = (std::max<ULONG>(64 * 1024, Length)); // should usually be sufficiently oversized
+      boost::scoped_array<uint8_t> buffer(new uint8_t[bufferSize]);
+
+      addNtSearchData(directoryCFHandles[FileHandle], FileName, FileInformationClass, buffer, bufferSize, result, foundFiles);
+
+      // for each overlay directory, repeat this search
+      std::vector<std::wstring> modNames = modInfo->modNames();
+      for (auto iter = modNames.begin(); iter != modNames.end(); ++iter) {
+        std::wstring localPath = modInfo->getModPathW() + L"\\" + *iter + L"\\" + relativePath;
+        addNtSearchData(localPath, FileName, FileInformationClass, buffer, bufferSize, result, foundFiles);
+      }
+      queryMutex.lock();
+      qdfData.insert(result);
+      queryMutex.unlock();
+    }
+
+    ULONG offset = 0;
+
+    boost::mutex::scoped_lock l(queryMutex);
+
+    uint8_t *destination = NULL;
+    // ok, data available, return it
+    while (qdfData[FileHandle].size() > 0) {
+      const std::vector<uint8_t> &data = qdfData[FileHandle].front();
+      if (data.size() < (Length - offset)) {
+        ULONG size = data.size();
+        destination = reinterpret_cast<uint8_t*>(FileInformation) + offset;
+        memcpy(destination, &data[0], size);
+
+        size = NextDividableBy(size, 8);
+        memcpy(destination, &size, sizeof(ULONG));
+
+        offset += (std::max<int>)(size, data.size()); // size is >= data.size except for the last element, so that after this loop offset contains the total data copied
+        qdfData[FileHandle].pop_front();
+        if (ReturnSingleEntry) {
+          break;
+        }
+      } else {
+        if (offset == 0) {
+          // we didn't have space for a single entry
+          return STATUS_BUFFER_OVERFLOW;
+        }
+        break;
+      }
+    }
+
+    if (destination != NULL) {
+      ULONG zero = 0UL;
+      memcpy(destination, &zero, sizeof(ULONG));
+    }
+
+    NTSTATUS res = ((qdfData[FileHandle].size() > 0) || (offset > 0)) ? STATUS_SUCCESS : STATUS_NO_MORE_FILES;
+    IoStatusBlock->Status = res;
+    IoStatusBlock->Information = offset;
+    return res;
+  } else {
+    return NtQueryDirectoryFile_reroute(FileHandle, Event, ApcRoutine, ApcContext, IoStatusBlock, FileInformation,
+                                        Length, FileInformationClass, ReturnSingleEntry, FileName, RestartScan);
+  }
+}
+
+
+/*
+
+NTSTATUS WINAPI NtQueryDirectoryFile_rep(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
+                 PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
+                 ULONG Length, FILE_INFORMATION_CLASS FileInformationClass, BOOLEAN ReturnSingleEntry,
+                 PUNICODE_STRING FileName, BOOLEAN RestartScan)
+{
+  if (directoryCFHandles.find(FileHandle) != directoryCFHandles.end()) {
+    LOGDEBUG("ntquerydirectoryfile called with a rerouted handle from CreateFile (%d) (%d) (%.*ls)",
+    ReturnSingleEntry, FileInformationClass, FileName != NULL ? FileName->Length : 4, FileName != NULL ? FileName->Buffer : L"null");
+    if (RestartScan) {
+      // drop our own cache data on rescan
+      auto iter = qdfData.find(FileHandle);
+      if (iter != qdfData.end()) {
+        qdfData.erase(iter);
+      }
+    }
+    if (qdfData.find(FileHandle) == qdfData.end()) {
+      // no info yet. we do a preflight over all mod directories and determine what the caller should find
+      qdfData.insert(std::make_pair(FileHandle, std::deque<std::tr1::tuple<HANDLE, ULONG, bool>>()));
+
+      std::wstring relativePath = directoryCFHandles[FileHandle].substr(modInfo->getDataPathW().length() + 1);
+      LOGDEBUG("searching relative: %ls", relativePath.c_str());
+
+      // we use one large buffer and copy the required section to newly allocated parts.
+      ULONG bufferSize = 64 * 1024; // this should be massively oversized
+      boost::scoped_array<uint8_t> buffer(new uint8_t[bufferSize]);
+
+      // for each overlay directory, repeat this search
+      std::vector<std::wstring> modNames = modInfo->modNames();
+      for (auto iter = modNames.begin(); iter != modNames.end(); ++iter) {
+        std::wstring localPath = modInfo->getModPathW() + L"\\" + *iter + L"\\" + relativePath;
+        LOGDEBUG("local: %ls", localPath.c_str());
+        // try to open the directory handle. If this doesn't work, the mod contains no such directory
+        HANDLE hdl = ::CreateFileW_reroute(localPath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        if (hdl != INVALID_HANDLE_VALUE) {
+          LOGDEBUG("handle open!");
+          std::tr1::tuple<HANDLE, int, bool> result(hdl, 0, true);
+          MyIOStatusBlock status;
+          PIO_STATUS_BLOCK statusP = reinterpret_cast<PIO_STATUS_BLOCK>(&status);
+          // query the files
+          memset(buffer.get(), 0xFF, bufferSize);
+          NTSTATUS res = NtQueryDirectoryFile_reroute(hdl, Event, NULL, NULL, statusP, buffer.get(), bufferSize, FileInformationClass, FALSE, FileName, FALSE);
+
+          while ((res == STATUS_SUCCESS) && (status.Information > 0)) {
+            LOGDEBUG("found files, result size: %lu", status.Information);
+            uint8_t *pos = buffer.get();
+            while (true) {
+              // all structures have the offset at the very beginning
+              ULONG nextOffset = GetOffset(pos, FileInformationClass);
+
+              LOGDEBUG("offset %lu", nextOffset);
+              pos += nextOffset;
+              if (nextOffset == 0) {
+                break;
+              }
+            }
+            std::get<1>(result) += status.Information;
+            res = NtQueryDirectoryFile_reroute(hdl, Event, NULL, NULL, statusP, buffer.get(), bufferSize, FileInformationClass, FALSE, FileName, FALSE);
+          }
+          LOGDEBUG("%lu bytes of search data", std::get<1>(result));
+
+          if (std::get<1>(result) > 0) {
+            qdfData[FileHandle].push_back(result);
+          }
+        }
+      }
+    }
+
+    // right, so data is available, return it
+    if (qdfData[FileHandle].size() > 0) {
+      // this mechanism should ensure that querydirectoryfile continues to return data (and success status) while actually going through different
+      // directories. the last directory search is allowed to go past the last find as to report the correct result
+      auto searchData = qdfData[FileHandle].begin();
+      if ((std::get<1>(*searchData) <= 0) && (qdfData[FileHandle].size() > 1)) {
+        qdfData[FileHandle].pop_front();
+        searchData = qdfData[FileHandle].begin();
+      }
+      NTSTATUS res = NtQueryDirectoryFile_reroute(std::get<0>(*searchData), Event, ApcRoutine, ApcContext, IoStatusBlock, FileInformation,
+                                                  Length, FileInformationClass, ReturnSingleEntry, FileName, std::get<2>(*searchData));
+      std::get<2>(*searchData) = false;
+      if (res == STATUS_SUCCESS) {
+        std::get<1>(*searchData) -= reinterpret_cast<MyIOStatusBlock*>(IoStatusBlock)->Information;
+      } else {
+        // this could be smarter...
+        std::get<1>(*searchData) = 0;
+      }
+
+      return res;
+    } else {
+      // this should not happen as the if part should already return STATUS_NO_MORE_FILES after going through the last dir
+      return STATUS_NO_MORE_FILES;
+    }
+  } else {
+    return NtQueryDirectoryFile_reroute(FileHandle, Event, ApcRoutine, ApcContext, IoStatusBlock, FileInformation,
+                                        Length, FileInformationClass, ReturnSingleEntry, FileName, RestartScan);
+  }
+}
+*/
+
 
 std::vector<ApiHook*> hooks;
 
@@ -1908,7 +2371,7 @@ BOOL InitHooks()
     INITHOOK(TEXT("version.dll"), GetFileVersionInfoW);
     INITHOOK(TEXT("version.dll"), GetFileVersionInfoSizeW);
 
-
+    INITHOOK(TEXT("ntdll.dll"), NtQueryDirectoryFile);
 
     if (versionInfo.dwMajorVersion >= 6) { // vista and up
       INITHOOK(TEXT("version.dll"), GetFileVersionInfoExW);

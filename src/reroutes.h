@@ -196,3 +196,27 @@ extern GetFileVersionInfoSizeW_type GetFileVersionInfoSizeW_reroute;
 
 typedef DWORD (WINAPI *GetModuleFileNameW_type)(HMODULE, LPWSTR, DWORD);
 extern GetModuleFileNameW_type GetModuleFileNameW_reroute;
+
+
+
+// ntdll types
+typedef struct _IO_STATUS_BLOCK IO_STATUS_BLOCK;
+
+typedef struct _IO_STATUS_BLOCK * PIO_STATUS_BLOCK;
+typedef VOID(NTAPI * 	PIO_APC_ROUTINE )(__in PVOID ApcContext, __in PIO_STATUS_BLOCK IoStatusBlock, __in ULONG Reserved);
+typedef enum _FILE_INFORMATION_CLASS FILE_INFORMATION_CLASS;
+
+typedef struct _UNICODE_STRING {
+  USHORT Length;
+  USHORT MaximumLength;
+  PWSTR  Buffer;
+} UNICODE_STRING, *PUNICODE_STRING;
+
+
+typedef NTSTATUS (WINAPI *NtQueryDirectoryFile_type)(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
+                  PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
+                  ULONG Length, FILE_INFORMATION_CLASS FileInformationClass, BOOLEAN ReturnSingleEntry,
+                  PUNICODE_STRING FileName, BOOLEAN RestartScan);
+extern NtQueryDirectoryFile_type NtQueryDirectoryFile_reroute;
+
+//typedef BOOL (WINAPI *BackupRead_type)(HANDLE, LPBYTE, DWORD, LPDWORD, BOOL, BOOL, LPVOID);
