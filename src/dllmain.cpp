@@ -646,7 +646,6 @@ BOOL WINAPI CreateDirectoryW_rep(LPCWSTR lpPathName, LPSECURITY_ATTRIBUTES lpSec
 {
   PROFILE();
   std::wstring reroutePath = modInfo->getRerouteOpenExisting(lpPathName);
-  LOGDEBUG("create directory %ls -> %ls", lpPathName, reroutePath.c_str());
   if (StartsWith(lpPathName, modInfo->getDataPathW().c_str())) {
     // the intermediate directories may exist in the original directory but not in the rerouted location
     // so do a recursive create
