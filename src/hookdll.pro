@@ -45,8 +45,8 @@ CONFIG(debug, debug|release) {
   DEFINES += DEBUG
 } else {
   LIBS += -L$$OUT_PWD/../shared/release -L$$OUT_PWD/../bsatk/release
-#  QMAKE_CXXFLAGS += /Z7
-  QMAKE_LFLAGS += /DEBUG /INCREMENTAL:NO /OPT:REF /OPT:ICF
+  QMAKE_CXXFLAGS += /GL
+  QMAKE_LFLAGS += /DEBUG /INCREMENTAL:NO /LTCG /OPT:REF /OPT:ICF
 }
 
 DEFINES += UNICODE _UNICODE
