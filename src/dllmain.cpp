@@ -2115,8 +2115,8 @@ NTSTATUS WINAPI NtQueryDirectoryFile_rep(HANDLE FileHandle, HANDLE Event, PIO_AP
 {
   if (   (directoryCFHandles.find(FileHandle) != directoryCFHandles.end())
       && (ApcRoutine == NULL)) {   // this hook doesn't support asynchronous operation
-    LOGDEBUG("%x ntquerydirectoryfile called with a rerouted handle from CreateFile (%d) (%d) (%.*ls)",
-        FileHandle, ReturnSingleEntry, FileInformationClass, FileName != NULL ? FileName->Length : 4, FileName != NULL ? FileName->Buffer : L"null");
+    LOGDEBUG("ntquerydirectoryfile called with a rerouted handle from CreateFile (%d) (%d) (%.*ls)",
+        ReturnSingleEntry, FileInformationClass, FileName != NULL ? FileName->Length : 4, FileName != NULL ? FileName->Buffer : L"null");
     if (RestartScan) {
       // drop our own cache data on rescan
       queryMutex.lock();
