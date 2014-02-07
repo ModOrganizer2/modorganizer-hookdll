@@ -411,10 +411,10 @@ HANDLE WINAPI CreateFileW_rep(LPCWSTR lpFileName,
   bool rerouted = false;
 
   // newly created files in the data directory go to overwrite
-  if (((dwCreationDisposition == CREATE_ALWAYS) || (dwCreationDisposition == CREATE_NEW)) &&
+  if (((dwCreationDisposition == CREATE_ALWAYS) || (dwCreationDisposition == CREATE_NEW) || (dwCreationDisposition == OPEN_ALWAYS)) &&
       (StartsWith(fullFileName, modInfo->getDataPathW().c_str()))) {
     // need to check if the file exists. If it does, act on the existing file, otherwise the behaviour is not transparent
-    // if the regular call causes an error message and rerouted to
+    // if the regular call causes an error message and rerouted to overwrite
     rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName, false, &rerouted);
     if (!rerouted && !FileExists_reroute(lpFileName)) {
       std::wostringstream temp;
@@ -1985,6 +1985,7 @@ typedef struct _FILE_REPARSE_POINT_INFORMATION {
 #define STATUS_SUCCESS ((NTSTATUS)0x00000000L)
 #define STATUS_BUFFER_OVERFLOW ((NTSTATUS)0x80000005L)
 #define STATUS_NO_MORE_FILES ((NTSTATUS)0x80000006L)
+#define STATUS_NO_SUCH_FILE ((NTSTATUS)0xC000000FL)
 
 
 enum _MY_FILE_INFORMATION_CLASS {
@@ -2066,16 +2067,17 @@ int NextDividableBy(int number, int divider)
 
 
 
-void addNtSearchData(const std::wstring &localPath,
+NTSTATUS addNtSearchData(const std::wstring &localPath,
                      PUNICODE_STRING FileName, FILE_INFORMATION_CLASS FileInformationClass,
                      boost::scoped_array<uint8_t> &buffer, ULONG bufferSize,
                      std::pair<HANDLE, std::deque<std::vector<uint8_t>>> &result, std::set<std::wstring> &foundFiles)
 {
+  NTSTATUS res = STATUS_NO_SUCH_FILE;
   // try to open the directory handle. If this doesn't work, the mod contains no such directory
   HANDLE hdl = ::CreateFileW_reroute(localPath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
   if (hdl != INVALID_HANDLE_VALUE) {
     IO_STATUS_BLOCK status;
-    NTSTATUS res = NtQueryDirectoryFile_reroute(hdl, NULL, NULL, NULL, &status, buffer.get(), bufferSize, FileInformationClass, FALSE, FileName, FALSE);
+    res = NtQueryDirectoryFile_reroute(hdl, NULL, NULL, NULL, &status, buffer.get(), bufferSize, FileInformationClass, FALSE, FileName, FALSE);
     while ((res == STATUS_SUCCESS) && (status.Information > 0)) {
       uint8_t *pos = buffer.get();
       ULONG totalOffset = 0;
@@ -2103,6 +2105,7 @@ void addNtSearchData(const std::wstring &localPath,
       res = NtQueryDirectoryFile_reroute(hdl, NULL, NULL, NULL, &status, buffer.get(), bufferSize, FileInformationClass, FALSE, FileName, FALSE);
     }
   }
+  return res;
 }
 
 // TODO: This doesn't report errors in the hooked path. It doesn't handle the Apc routine. It doesn't handle the corner
@@ -2126,6 +2129,9 @@ NTSTATUS WINAPI NtQueryDirectoryFile_rep(HANDLE FileHandle, HANDLE Event, PIO_AP
       }
       queryMutex.unlock();
     }
+
+    bool noSuchFile = true;
+
     if (qdfData.find(FileHandle) == qdfData.end()) {
       // no data yet, query it
       std::set<std::wstring> foundFiles;
@@ -2141,13 +2147,17 @@ NTSTATUS WINAPI NtQueryDirectoryFile_rep(HANDLE FileHandle, HANDLE Event, PIO_AP
       ULONG bufferSize = (std::max<ULONG>(64 * 1024, Length)); // should usually be sufficiently oversized
       boost::scoped_array<uint8_t> buffer(new uint8_t[bufferSize]);
 
-      addNtSearchData(directoryCFHandles[FileHandle], FileName, FileInformationClass, buffer, bufferSize, result, foundFiles);
+      if (addNtSearchData(directoryCFHandles[FileHandle], FileName, FileInformationClass, buffer, bufferSize, result, foundFiles) != STATUS_NO_SUCH_FILE) {
+        noSuchFile = false;
+      }
 
       // for each overlay directory, repeat this search
       std::vector<std::wstring> modNames = modInfo->modNames();
       for (auto iter = modNames.begin(); iter != modNames.end(); ++iter) {
         std::wstring localPath = modInfo->getModPathW() + L"\\" + *iter + L"\\" + relativePath;
-        addNtSearchData(localPath, FileName, FileInformationClass, buffer, bufferSize, result, foundFiles);
+        if (addNtSearchData(localPath, FileName, FileInformationClass, buffer, bufferSize, result, foundFiles) != STATUS_NO_SUCH_FILE) {
+          noSuchFile = false;
+        }
       }
       queryMutex.lock();
       qdfData.insert(result);
@@ -2157,7 +2167,6 @@ NTSTATUS WINAPI NtQueryDirectoryFile_rep(HANDLE FileHandle, HANDLE Event, PIO_AP
     ULONG offset = 0;
 
     boost::mutex::scoped_lock l(queryMutex);
-
     uint8_t *destination = NULL;
     // ok, data available, return it
     while (qdfData[FileHandle].size() > 0) {
@@ -2188,8 +2197,15 @@ NTSTATUS WINAPI NtQueryDirectoryFile_rep(HANDLE FileHandle, HANDLE Event, PIO_AP
       ULONG zero = 0UL;
       memcpy(destination, &zero, sizeof(ULONG));
     }
+    NTSTATUS res;
 
-    NTSTATUS res = ((qdfData[FileHandle].size() > 0) || (offset > 0)) ? STATUS_SUCCESS : STATUS_NO_MORE_FILES;
+    if (noSuchFile) {
+      res = STATUS_NO_SUCH_FILE;
+    } else if ((qdfData[FileHandle].size() > 0) || (offset > 0)) {
+      res = STATUS_SUCCESS;
+    } else {
+      res = STATUS_NO_MORE_FILES;
+    }
     IoStatusBlock->Status = res;
     IoStatusBlock->Information = offset;
     return res;
