@@ -403,10 +403,15 @@ HANDLE WINAPI CreateFileW_rep(LPCWSTR lpFileName,
   PROFILE();
   std::wstring rerouteFilename;
 
-  WCHAR fullFileName[MAX_PATH];
+  WCHAR fullFileNameBuf[MAX_PATH];
+  LPWSTR fullFileName = fullFileNameBuf;
   memset(fullFileName, '\0', MAX_PATH * sizeof(WCHAR));
   modInfo->getFullPathName(lpFileName, fullFileName, MAX_PATH);
   modInfo->checkPathAlternative(fullFileName);
+
+  if (StartsWith(fullFileName, L"\\\\?\\")) {
+    fullFileName = fullFileName + 4;
+  }
 
   bool rerouted = false;
 
@@ -2108,6 +2113,7 @@ NTSTATUS addNtSearchData(const std::wstring &localPath,
   return res;
 }
 
+
 // TODO: This doesn't report errors in the hooked path. It doesn't handle the Apc routine. It doesn't handle the corner
 // case where, on first call, the buffer is allowed to be smaller than the data element as long as it's long enough to receive the
 // fixed block size. It doesn't signal IO Completion objects. It ... augh fuck this function is complicated...
@@ -2214,107 +2220,6 @@ NTSTATUS WINAPI NtQueryDirectoryFile_rep(HANDLE FileHandle, HANDLE Event, PIO_AP
                                         Length, FileInformationClass, ReturnSingleEntry, FileName, RestartScan);
   }
 }
-
-
-/*
-
-NTSTATUS WINAPI NtQueryDirectoryFile_rep(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
-                 PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
-                 ULONG Length, FILE_INFORMATION_CLASS FileInformationClass, BOOLEAN ReturnSingleEntry,
-                 PUNICODE_STRING FileName, BOOLEAN RestartScan)
-{
-  if (directoryCFHandles.find(FileHandle) != directoryCFHandles.end()) {
-    LOGDEBUG("ntquerydirectoryfile called with a rerouted handle from CreateFile (%d) (%d) (%.*ls)",
-    ReturnSingleEntry, FileInformationClass, FileName != NULL ? FileName->Length : 4, FileName != NULL ? FileName->Buffer : L"null");
-    if (RestartScan) {
-      // drop our own cache data on rescan
-      auto iter = qdfData.find(FileHandle);
-      if (iter != qdfData.end()) {
-        qdfData.erase(iter);
-      }
-    }
-    if (qdfData.find(FileHandle) == qdfData.end()) {
-      // no info yet. we do a preflight over all mod directories and determine what the caller should find
-      qdfData.insert(std::make_pair(FileHandle, std::deque<std::tr1::tuple<HANDLE, ULONG, bool>>()));
-
-      std::wstring relativePath = directoryCFHandles[FileHandle].substr(modInfo->getDataPathW().length() + 1);
-      LOGDEBUG("searching relative: %ls", relativePath.c_str());
-
-      // we use one large buffer and copy the required section to newly allocated parts.
-      ULONG bufferSize = 64 * 1024; // this should be massively oversized
-      boost::scoped_array<uint8_t> buffer(new uint8_t[bufferSize]);
-
-      // for each overlay directory, repeat this search
-      std::vector<std::wstring> modNames = modInfo->modNames();
-      for (auto iter = modNames.begin(); iter != modNames.end(); ++iter) {
-        std::wstring localPath = modInfo->getModPathW() + L"\\" + *iter + L"\\" + relativePath;
-        LOGDEBUG("local: %ls", localPath.c_str());
-        // try to open the directory handle. If this doesn't work, the mod contains no such directory
-        HANDLE hdl = ::CreateFileW_reroute(localPath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
-        if (hdl != INVALID_HANDLE_VALUE) {
-          LOGDEBUG("handle open!");
-          std::tr1::tuple<HANDLE, int, bool> result(hdl, 0, true);
-          MyIOStatusBlock status;
-          PIO_STATUS_BLOCK statusP = reinterpret_cast<PIO_STATUS_BLOCK>(&status);
-          // query the files
-          memset(buffer.get(), 0xFF, bufferSize);
-          NTSTATUS res = NtQueryDirectoryFile_reroute(hdl, Event, NULL, NULL, statusP, buffer.get(), bufferSize, FileInformationClass, FALSE, FileName, FALSE);
-
-          while ((res == STATUS_SUCCESS) && (status.Information > 0)) {
-            LOGDEBUG("found files, result size: %lu", status.Information);
-            uint8_t *pos = buffer.get();
-            while (true) {
-              // all structures have the offset at the very beginning
-              ULONG nextOffset = GetOffset(pos, FileInformationClass);
-
-              LOGDEBUG("offset %lu", nextOffset);
-              pos += nextOffset;
-              if (nextOffset == 0) {
-                break;
-              }
-            }
-            std::get<1>(result) += status.Information;
-            res = NtQueryDirectoryFile_reroute(hdl, Event, NULL, NULL, statusP, buffer.get(), bufferSize, FileInformationClass, FALSE, FileName, FALSE);
-          }
-          LOGDEBUG("%lu bytes of search data", std::get<1>(result));
-
-          if (std::get<1>(result) > 0) {
-            qdfData[FileHandle].push_back(result);
-          }
-        }
-      }
-    }
-
-    // right, so data is available, return it
-    if (qdfData[FileHandle].size() > 0) {
-      // this mechanism should ensure that querydirectoryfile continues to return data (and success status) while actually going through different
-      // directories. the last directory search is allowed to go past the last find as to report the correct result
-      auto searchData = qdfData[FileHandle].begin();
-      if ((std::get<1>(*searchData) <= 0) && (qdfData[FileHandle].size() > 1)) {
-        qdfData[FileHandle].pop_front();
-        searchData = qdfData[FileHandle].begin();
-      }
-      NTSTATUS res = NtQueryDirectoryFile_reroute(std::get<0>(*searchData), Event, ApcRoutine, ApcContext, IoStatusBlock, FileInformation,
-                                                  Length, FileInformationClass, ReturnSingleEntry, FileName, std::get<2>(*searchData));
-      std::get<2>(*searchData) = false;
-      if (res == STATUS_SUCCESS) {
-        std::get<1>(*searchData) -= reinterpret_cast<MyIOStatusBlock*>(IoStatusBlock)->Information;
-      } else {
-        // this could be smarter...
-        std::get<1>(*searchData) = 0;
-      }
-
-      return res;
-    } else {
-      // this should not happen as the if part should already return STATUS_NO_MORE_FILES after going through the last dir
-      return STATUS_NO_MORE_FILES;
-    }
-  } else {
-    return NtQueryDirectoryFile_reroute(FileHandle, Event, ApcRoutine, ApcContext, IoStatusBlock, FileInformation,
-                                        Length, FileInformationClass, ReturnSingleEntry, FileName, RestartScan);
-  }
-}
-*/
 
 
 std::vector<ApiHook*> hooks;

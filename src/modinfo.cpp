@@ -142,7 +142,7 @@ ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirecto
 
   std::fstream file(m_ModListPath.c_str());
   if (!file.is_open()) {
-    Logger::Instance().error("mod list \"%ls\" not found!", m_ModListPath.c_str());
+    Logger::Instance().error("failed to read \"%ls\": %s", m_ModListPath.c_str(), strerror(errno));
     return;
   }
 
@@ -694,7 +694,6 @@ HANDLE ModInfo::findStart(LPCWSTR lpFileName,
     HANDLE handle = dataSearch(absoluteFileName, filenameOffset, searchHandle,
                       tempData, fInfoLevelId, fSearchOp,
                       lpSearchFilter, dwAdditionalFlags);
-
     if (handle != INVALID_HANDLE_VALUE) {
       // if there were results, add them to our buffer
       findNext(handle, (LPWIN32_FIND_DATAW)lpFindFileData);
@@ -790,8 +789,13 @@ std::wstring ModInfo::getRerouteOpenExisting(LPCWSTR originalName, bool preferOr
     *rerouted = false;
   }
 
-  WCHAR temp[MAX_PATH];
-  getFullPathName(originalName, temp, MAX_PATH);
+  WCHAR tempBuf[MAX_PATH];
+  getFullPathName(originalName, tempBuf, MAX_PATH);
+  LPCWSTR temp = tempBuf;
+  if (StartsWith(temp, L"\\\\?\\")) {
+    temp += 4;
+  }
+
   std::wstring result;
   LPCWSTR baseName = GetBaseName(temp);
   LPCWSTR sPos = NULL;
