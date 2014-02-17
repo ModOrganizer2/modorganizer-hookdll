@@ -145,7 +145,9 @@ PVOID exceptionHandler = NULL;
 boost::mutex queryMutex;
 std::map<HANDLE, std::wstring> directoryCFHandles;
 std::map<HANDLE, std::deque<std::vector<uint8_t>>> qdfData;
-//std::map<HANDLE, std::deque<std::tr1::tuple<HANDLE, ULONG, bool>>> qdfData;
+
+
+std::map<std::wstring, std::wstring> tweakedIniValues;
 
 int sLogLevel = 0;
 
@@ -457,7 +459,8 @@ HANDLE WINAPI CreateFileW_rep(LPCWSTR lpFileName,
     directoryCFHandles[result] = std::wstring(fullFileName);
   }
 
-  if (rerouted) {
+//  if (rerouted) {
+if (true) {
     LOGDEBUG("createfile w: %ls -> %ls (%x - %x) = %p (%d)", lpFileName, rerouteFilename.c_str(), dwDesiredAccess, dwCreationDisposition, result, ::GetLastError());
   }
 
@@ -555,6 +558,7 @@ BOOL WINAPI GetFileAttributesExW_rep(LPCWSTR lpFileName, GET_FILEEX_INFO_LEVELS 
       LOGDEBUG("get file attributesex: %ls -> %ls: %d", lpFileName, rerouteFilename.c_str(), result);
     }
   }
+else LOGDEBUG("get file attributesex: %ls -> %ls: %d", lpFileName, rerouteFilename.c_str(), result);
   return result;
 }
 
@@ -1226,6 +1230,8 @@ DWORD WINAPI GetPrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LP
 
       res = GetPrivateProfileStringA_reroute(lpAppName, lpKeyName, lpDefault,
                                              temp.get(), nSize, rerouteFilename.c_str());
+    } else {
+      tweakedIniValues[ToWString(lpKeyName, false)] = ToWString(temp.get(), false);
     }
 
     strncpy(lpReturnedString, temp.get(), static_cast<size_t>(res + 1));
@@ -1246,6 +1252,8 @@ DWORD WINAPI GetPrivateProfileStringW_rep(LPCWSTR lpAppName, LPCWSTR lpKeyName, 
     if (wcscmp(lpReturnedString, L"DUMMY_VALUE") == 0) {
       std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
       res = GetPrivateProfileStringW_reroute(lpAppName, lpKeyName, lpDefault, lpReturnedString, nSize, rerouteFilename.c_str());
+    } else {
+      tweakedIniValues[lpKeyName] = lpReturnedString;
     }
     return res;
   } else {
@@ -1348,6 +1356,7 @@ UINT WINAPI GetPrivateProfileIntA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, INT nD
       std::string rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
       return GetPrivateProfileIntA_reroute(lpAppName, lpKeyName, nDefault, rerouteFilename.c_str());
     } else {
+      tweakedIniValues[ToWString(lpKeyName, false)] = std::to_wstring(static_cast<unsigned long long>(res));
       return res;
     }
   } else {
@@ -1368,6 +1377,7 @@ UINT WINAPI GetPrivateProfileIntW_rep(LPCWSTR lpAppName, LPCWSTR lpKeyName, INT 
       std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
       return GetPrivateProfileIntW_reroute(lpAppName, lpKeyName, nDefault, rerouteFilename.c_str());
     } else {
+      tweakedIniValues[lpKeyName] = std::to_wstring(static_cast<unsigned long long>(res));
       return res;
     }
   } else {
@@ -1405,6 +1415,20 @@ BOOL WINAPI WritePrivateProfileSectionW_rep(LPCWSTR lpAppName, LPCWSTR lpString,
 BOOL WINAPI WritePrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LPCSTR lpString, LPCSTR lpFileName)
 {
   PROFILE();
+
+  std::wstring keyW = ToWString(lpKeyName, false);
+  if (tweakedIniValues.find(keyW) != tweakedIniValues.end()) {
+    if (ToWString(lpString, false) != tweakedIniValues[keyW]) {
+      // store in current tweaked file so the setting is used in this session
+      BOOL res = WritePrivateProfileStringA_reroute(lpAppName, lpKeyName, lpString, modInfo->getTweakedIniA().c_str());
+      // also store in "profile_tweaks.ini" for this profile so the settings can be applied in the future
+      WritePrivateProfileStringA_reroute(lpAppName, lpKeyName, lpString,
+                                         ToString(modInfo->getProfilePath() + L"\\" + AppConfig::profileTweakIni().c_str(), false).c_str());
+      return res;
+    } else {
+      return true;
+    }
+  }
 
   if (lpFileName != NULL) {
     std::string rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
