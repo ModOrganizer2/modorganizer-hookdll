@@ -1399,11 +1399,51 @@ UINT WINAPI GetPrivateProfileIntW_rep(LPCWSTR lpAppName, LPCWSTR lpKeyName, INT 
 }
 
 
+
+// ensures that the specified file exists (virtually) IF it is inside the data directory
+void MakeFileExist(LPCWSTR fileName)
+{
+  WCHAR fullFileNameBuf[MAX_PATH];
+  LPWSTR fullFileName = fullFileNameBuf;
+  memset(fullFileName, '\0', MAX_PATH * sizeof(WCHAR));
+  modInfo->getFullPathName(fileName, fullFileName, MAX_PATH);
+  modInfo->checkPathAlternative(fullFileName);
+
+  if (StartsWith(fullFileName, L"\\\\?\\")) {
+    fullFileName = fullFileName + 4;
+  }
+
+  bool rerouted = false;
+
+  if (StartsWith(fullFileName, modInfo->getDataPathW().c_str())) {
+    // need to check if the file exists. If it does, act on the existing file, otherwise the behaviour is not transparent
+    // if the regular call causes an error message and rerouted to overwrite
+    std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(fileName, false, &rerouted);
+    if (!rerouted && !FileExists_reroute(fileName)) {
+      std::wostringstream temp;
+      temp << GameInfo::instance().getOverwriteDir() << "\\" << (fullFileName + modInfo->getDataPathW().length());
+      rerouteFilename = temp.str();
+
+      std::wstring targetDirectory = rerouteFilename.substr(0, rerouteFilename.find_last_of(L"\\/"));
+      CreateDirectoryRecursive(targetDirectory.c_str(), NULL);
+      modInfo->addOverwriteFile(rerouteFilename);
+    }
+  }
+}
+
+
+// ensures that the specified file exists (virtually) IF it is inside the data directory
+void MakeFileExist(LPCSTR fileName)
+{
+  MakeFileExist(ToWString(fileName, false).c_str());
+}
+
 BOOL WINAPI WritePrivateProfileSectionA_rep(LPCSTR lpAppName, LPCSTR lpString, LPCSTR lpFileName)
 {
   PROFILE();
 
   if (lpFileName != NULL) {
+    MakeFileExist(lpFileName);
     std::string rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
     return WritePrivateProfileSectionA_reroute(lpAppName, lpString, rerouteFilename.c_str());
   } else {
@@ -1417,6 +1457,7 @@ BOOL WINAPI WritePrivateProfileSectionW_rep(LPCWSTR lpAppName, LPCWSTR lpString,
   PROFILE();
 
   if (lpFileName != NULL) {
+    MakeFileExist(lpFileName);
     std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
     return WritePrivateProfileSectionW_reroute(lpAppName, lpString, rerouteFilename.c_str());
   } else {
@@ -1428,7 +1469,6 @@ BOOL WINAPI WritePrivateProfileSectionW_rep(LPCWSTR lpAppName, LPCWSTR lpString,
 BOOL WINAPI WritePrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LPCSTR lpString, LPCSTR lpFileName)
 {
   PROFILE();
-
   std::wstring keyW = ToWString(lpKeyName, false);
   if (tweakedIniValues.find(keyW) != tweakedIniValues.end()) {
     if (ToWString(lpString, false) != tweakedIniValues[keyW]) {
@@ -1444,6 +1484,7 @@ BOOL WINAPI WritePrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, L
   }
 
   if (lpFileName != NULL) {
+    MakeFileExist(lpFileName);
     std::string rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
     return WritePrivateProfileStringA_reroute(lpAppName, lpKeyName, lpString, rerouteFilename.c_str());
   } else {
@@ -1457,6 +1498,7 @@ BOOL WINAPI WritePrivateProfileStringW_rep(LPCWSTR lpAppName, LPCWSTR lpKeyName,
   PROFILE();
 
   if (lpFileName != NULL) {
+    MakeFileExist(lpFileName);
     std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
     return WritePrivateProfileStringW_reroute(lpAppName, lpKeyName, lpString, rerouteFilename.c_str());
   } else {
@@ -1471,6 +1513,7 @@ BOOL WINAPI WritePrivateProfileStructA_rep(LPCSTR lpszSection, LPCSTR lpszKey, L
   PROFILE();
 
   if (szFile != NULL) {
+    MakeFileExist(szFile);
     std::string rerouteFilename = modInfo->getRerouteOpenExisting(szFile);
     return WritePrivateProfileStructA_reroute(lpszSection, lpszKey, lpStruct, uSizeStruct, rerouteFilename.c_str());
   } else {
@@ -1485,6 +1528,7 @@ BOOL WINAPI WritePrivateProfileStructW_rep(LPCWSTR lpszSection, LPCWSTR lpszKey,
   PROFILE();
 
   if (szFile != NULL) {
+    MakeFileExist(szFile);
     std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(szFile);
     return WritePrivateProfileStructW_reroute(lpszSection, lpszKey, lpStruct, uSizeStruct, rerouteFilename.c_str());
   } else {
