@@ -459,8 +459,7 @@ HANDLE WINAPI CreateFileW_rep(LPCWSTR lpFileName,
     directoryCFHandles[result] = std::wstring(fullFileName);
   }
 
-//  if (rerouted) {
-if (true) {
+  if (rerouted) {
     LOGDEBUG("createfile w: %ls -> %ls (%x - %x) = %p (%d)", lpFileName, rerouteFilename.c_str(), dwDesiredAccess, dwCreationDisposition, result, ::GetLastError());
   }
 
@@ -654,8 +653,22 @@ BOOL WINAPI FindClose_rep(HANDLE hFindFile)
 BOOL WINAPI CreateDirectoryW_rep(LPCWSTR lpPathName, LPSECURITY_ATTRIBUTES lpSecurityAttributes)
 {
   PROFILE();
-  std::wstring reroutePath = modInfo->getRerouteOpenExisting(lpPathName);
-  if (StartsWith(lpPathName, modInfo->getDataPathW().c_str())) {
+  WCHAR fullPathNameBuf[MAX_PATH];
+  LPWSTR fullPathName = fullPathNameBuf;
+  memset(fullPathName, '\0', MAX_PATH * sizeof(WCHAR));
+  modInfo->getFullPathName(lpPathName, fullPathName, MAX_PATH);
+
+  bool rerouted = false;
+  std::wstring reroutePath = modInfo->getRerouteOpenExisting(fullPathName, false, &rerouted);
+  if (StartsWith(fullPathName, modInfo->getDataPathW().c_str())) {
+    if (!rerouted) {
+      // redirect directory creation to overwrite
+      std::wostringstream temp;
+      temp << GameInfo::instance().getOverwriteDir() << "\\" << (fullPathName + modInfo->getDataPathW().length());
+      reroutePath = temp.str();
+    }
+    LOGDEBUG("create directory: %ls -> %ls", lpPathName, reroutePath.c_str());
+
     // the intermediate directories may exist in the original directory but not in the rerouted location
     // so do a recursive create
     return CreateDirectoryRecursive(reroutePath.c_str(), lpSecurityAttributes);
