@@ -2478,8 +2478,14 @@ BOOL SetUpBSAMap()
 void SetUpBlacklist()
 {
   // processes we never want to hook. lower-case characters only!
-  processBlacklistA = boost::assign::list_of("steam.exe")("chrome.exe")("firefox.exe");
-  processBlacklistW = boost::assign::list_of(L"steam.exe")(L"chrome.exe")(L"firefox.exe");
+  {
+    std::list<std::string> temp = boost::assign::list_of("steam.exe")("chrome.exe")("firefox.exe");
+    processBlacklistA = std::set<std::string>(temp.begin(), temp.end());
+  }
+  {
+    std::list<std::wstring> temp = boost::assign::list_of(L"steam.exe")(L"chrome.exe")(L"firefox.exe");
+    processBlacklistW = std::set<std::wstring>(temp.begin(), temp.end());
+  }
 }
 
 
