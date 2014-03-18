@@ -2769,12 +2769,12 @@ BOOL APIENTRY DllMain(HMODULE module,
       delete modInfo;
       modInfo = NULL;
     } break;
-	  case DLL_THREAD_ATTACH: {
+    case DLL_THREAD_ATTACH: {
     } break;
-	  case DLL_THREAD_DETACH: {
+    case DLL_THREAD_DETACH: {
     } break;
-	}
-	return TRUE;
+  }
+  return TRUE;
 }
 
 
