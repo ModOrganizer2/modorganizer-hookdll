@@ -1469,17 +1469,20 @@ BOOL WINAPI WritePrivateProfileSectionW_rep(LPCWSTR lpAppName, LPCWSTR lpString,
 BOOL WINAPI WritePrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LPCSTR lpString, LPCSTR lpFileName)
 {
   PROFILE();
-  std::wstring keyW = ToWString(lpKeyName, false);
-  if (tweakedIniValues.find(keyW) != tweakedIniValues.end()) {
-    if (ToWString(lpString, false) != tweakedIniValues[keyW]) {
-      // store in current tweaked file so the setting is used in this session
-      BOOL res = WritePrivateProfileStringA_reroute(lpAppName, lpKeyName, lpString, modInfo->getTweakedIniA().c_str());
-      // also store in "profile_tweaks.ini" for this profile so the settings can be applied in the future
-      WritePrivateProfileStringA_reroute(lpAppName, lpKeyName, lpString,
-                                         ToString(modInfo->getProfilePath() + L"\\" + AppConfig::profileTweakIni().c_str(), false).c_str());
-      return res;
-    } else {
-      return true;
+  // lpKeyName is in fact allowed to be null, in which cast this function has entirely different semantics
+  if (lpKeyName != NULL) {
+    std::wstring keyW = ToWString(lpKeyName, false);
+    if (tweakedIniValues.find(keyW) != tweakedIniValues.end()) {
+      if (ToWString(lpString, false) != tweakedIniValues[keyW]) {
+        // store in current tweaked file so the setting is used in this session
+        BOOL res = WritePrivateProfileStringA_reroute(lpAppName, lpKeyName, lpString, modInfo->getTweakedIniA().c_str());
+        // also store in "profile_tweaks.ini" for this profile so the settings can be applied in the future
+        WritePrivateProfileStringA_reroute(lpAppName, lpKeyName, lpString,
+                                           ToString(modInfo->getProfilePath() + L"\\" + AppConfig::profileTweakIni().c_str(), false).c_str());
+        return res;
+      } else {
+        return true;
+      }
     }
   }
 
