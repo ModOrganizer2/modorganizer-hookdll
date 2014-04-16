@@ -1559,7 +1559,7 @@ DWORD WINAPI GetCurrentDirectoryW_rep(DWORD nBufferLength, LPWSTR lpBuffer)
       wcsncpy(lpBuffer, fakeCurrentDirectory.c_str(), len);
       lpBuffer[len] = L'\0';
     }
-    return static_cast<DWORD>(fakeCurrentDirectory.length() + 1);
+    return static_cast<DWORD>(fakeCurrentDirectory.length());
   } else {
     return ::GetCurrentDirectoryW_reroute(nBufferLength, lpBuffer);
   }
