@@ -853,7 +853,7 @@ std::wstring ModInfo::getPath(LPCWSTR originalName, size_t offset, int &origin)
     std::wostringstream fullPath;
     fullPath <<  m_DirectoryStructure.getOriginByID(origin).getPath() << (originalName + offset);
     if (m_ModAccess.find(origin) == m_ModAccess.end()) {
-      Logger::Instance().debug("first access to %s", ToString( m_DirectoryStructure.getOriginByID(origin).getName(), true).c_str());
+      Logger::Instance().debug("first access to %s", ToString(m_DirectoryStructure.getOriginByID(origin).getName(), true).c_str());
       m_ModAccess.insert(origin);
     }
     return fullPath.str();

@@ -124,8 +124,6 @@ std::map<std::pair<int, DWORD>, bool> skipMap;
 
 std::string bsaResourceList;
 std::map<std::string, std::string> bsaMap;
-//std::set<std::string> bsaList;
-//std::set<std::string> usedBSAList;
 
 std::set<std::string> iniFilesA;
 
@@ -133,23 +131,20 @@ std::set<std::string> iniFilesA;
 std::set<std::string> processBlacklistA;
 std::set<std::wstring> processBlacklistW;
 
-
-//static const int MAX_PATH_UNICODE = 32768;
 static const int MAX_PATH_UNICODE = 256;
 
 HANDLE instanceMutex = INVALID_HANDLE_VALUE;
 HMODULE dllModule = NULL;
 PVOID exceptionHandler = NULL;
 
-
 boost::mutex queryMutex;
 std::map<HANDLE, std::wstring> directoryCFHandles;
 std::map<HANDLE, std::deque<std::vector<uint8_t>>> qdfData;
 
-
 std::map<std::wstring, std::wstring> tweakedIniValues;
 
 int sLogLevel = 0;
+bool winXP = false;
 
 
 #pragma message("the privatestring-hook is not functional with a debug build. should fix that")
@@ -1943,8 +1938,10 @@ DWORD WINAPI GetModuleFileNameW_rep(HMODULE hModule, LPWSTR lpFilename, DWORD nS
       LOGDEBUG("get module file name %ls -> %ls: %d", lpFilename, rerouted.c_str(), res);
       res = rerouted.size();
       if (res >= nSize) {
-        ::SetLastError(ERROR_INSUFFICIENT_BUFFER);
-        return 0UL;
+        if (!winXP) {
+          ::SetLastError(ERROR_INSUFFICIENT_BUFFER);
+        }
+        return nSize;
       }
 
       if (res > 0) {
@@ -2707,6 +2704,7 @@ BOOL Init(int logLevel, const wchar_t *profileName)
   ZeroMemory(&versionInfo, sizeof(OSVERSIONINFOEX));
   versionInfo.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEX);
   ::GetVersionEx((OSVERSIONINFO*)&versionInfo);
+  winXP = (versionInfo.dwMajorVersion == 5) && (versionInfo.dwMinorVersion == 1);
   Logger::Instance().info("Windows %d.%d (%s)", versionInfo.dwMajorVersion, versionInfo.dwMinorVersion, versionInfo.wProductType == VER_NT_WORKSTATION ? "workstation" : "server");
   ::GetModuleFileNameW(dllModule, moPath, MAX_PATH_UNICODE);
   VS_FIXEDFILEINFO version = GetFileVersion(moPath);
