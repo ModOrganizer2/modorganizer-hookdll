@@ -544,14 +544,15 @@ BOOL WINAPI GetFileAttributesExW_rep(LPCWSTR lpFileName, GET_FILEEX_INFO_LEVELS 
   }
 
   BOOL result = GetFileAttributesExW_reroute(rerouteFilename.c_str(), fInfoLevelId, lpFileInformation);
-  if (rerouted) {
-    if (result && (fInfoLevelId == GetFileExInfoStandard)) {
-      LPWIN32_FIND_DATAW fileData = (LPWIN32_FIND_DATAW)lpFileInformation;
-      LOGDEBUG("get file attributesex: %ls -> %ls: %d (%d)", lpFileName, rerouteFilename.c_str(), result, fileData->dwFileAttributes);
-    } else {
-      LOGDEBUG("get file attributesex: %ls -> %ls: %d", lpFileName, rerouteFilename.c_str(), result);
-    }
-  }
+//  loggin here is just tooo noisy
+//  if (rerouted) {
+//    if (result && (fInfoLevelId == GetFileExInfoStandard)) {
+//      LPWIN32_FIND_DATAW fileData = (LPWIN32_FIND_DATAW)lpFileInformation;
+//      LOGDEBUG("get file attributesex: %ls -> %ls: %d (%d)", lpFileName, rerouteFilename.c_str(), result, fileData->dwFileAttributes);
+//    } else {
+//      LOGDEBUG("get file attributesex: %ls -> %ls: %d", lpFileName, rerouteFilename.c_str(), result);
+//    }
+//  }
   return result;
 }
 
@@ -597,8 +598,6 @@ HANDLE WINAPI FindFirstFileExW_rep(LPCWSTR lpFileName,
     LOGDEBUG("findfirstfileex %ls: %ls (%x)", rerouteFilename.c_str(),
              ((LPWIN32_FIND_DATAW)lpFindFileData)->cFileName,
              ((LPWIN32_FIND_DATAW)lpFindFileData)->dwFileAttributes);
-  } else {
-    LOGDEBUG("findfirstfileex %ls: nothing found (%d)", rerouteFilename.c_str(), ::GetLastError());
   }
 
   return result;
@@ -2557,34 +2556,8 @@ void RemoveHooks()
 }
 
 
-LONG WINAPI VEHandler(PEXCEPTION_POINTERS exceptionPtrs)
+void writeMiniDump(PEXCEPTION_POINTERS exceptionPtrs)
 {
-/*  if ((exceptionPtrs->ExceptionRecord->ExceptionFlags != EXCEPTION_NONCONTINUABLE) ||
-      (exceptionPtrs->ExceptionRecord->ExceptionCode == 0xe06d7363)) {
-    // don't want to break on non-critical exceptions. 0xe06d7363 indicates a C++ exception. why are those marked non-continuable?
-    return EXCEPTION_CONTINUE_SEARCH;
-  }*/
-  if (exceptionPtrs->ExceptionRecord->ExceptionCode != 0xC0000005) {
-    // don't want to break on non-critical errors. The above block didn't work well, crashes
-    // happened for exceptions that wouldn't have been a problem
-    return EXCEPTION_CONTINUE_SEARCH;
-  }
-
-  DWORD start, end;
-  GetSectionRange(&start, &end, dllModule);
-
-  if (((DWORD)exceptionPtrs->ExceptionRecord->ExceptionAddress < start) ||
-      ((DWORD)exceptionPtrs->ExceptionRecord->ExceptionAddress > end)) {
-    std::wstring modName = GetSectionName(exceptionPtrs->ExceptionRecord->ExceptionAddress);
-    Logger::Instance().info("Windows Exception (%x). Origin: \"%ls\". Last hooked call: %s",
-                            exceptionPtrs->ExceptionRecord->ExceptionCode, modName.c_str(), s_LastFunction);
-    return EXCEPTION_CONTINUE_SEARCH;
-  } else {
-    Logger::Instance().error("Windows Exception (%x). Last hooked call: %s", exceptionPtrs->ExceptionRecord->ExceptionCode, s_LastFunction);
-  }
-
-  RemoveHooks();
-
   typedef BOOL (WINAPI *FuncMiniDumpWriteDump)(HANDLE process, DWORD pid, HANDLE file, MINIDUMP_TYPE dumpType,
                                                const PMINIDUMP_EXCEPTION_INFORMATION exceptionParam,
                                                const PMINIDUMP_USER_STREAM_INFORMATION userStreamParam,
@@ -2627,6 +2600,37 @@ LONG WINAPI VEHandler(PEXCEPTION_POINTERS exceptionPtrs)
   } else {
     Logger::Instance().error("No crash dump created, dbghelp.dll not found");
   }
+}
+
+LONG WINAPI VEHandler(PEXCEPTION_POINTERS exceptionPtrs)
+{
+/*  if ((exceptionPtrs->ExceptionRecord->ExceptionFlags != EXCEPTION_NONCONTINUABLE) ||
+      (exceptionPtrs->ExceptionRecord->ExceptionCode == 0xe06d7363)) {
+    // don't want to break on non-critical exceptions. 0xe06d7363 indicates a C++ exception. why are those marked non-continuable?
+    return EXCEPTION_CONTINUE_SEARCH;
+  }*/
+  if (exceptionPtrs->ExceptionRecord->ExceptionCode != 0xC0000005) {
+    // don't want to break on non-critical errors. The above block didn't work well, crashes
+    // happened for exceptions that wouldn't have been a problem
+    return EXCEPTION_CONTINUE_SEARCH;
+  }
+
+  DWORD start, end;
+  GetSectionRange(&start, &end, dllModule);
+
+  if (((DWORD)exceptionPtrs->ExceptionRecord->ExceptionAddress < start) ||
+      ((DWORD)exceptionPtrs->ExceptionRecord->ExceptionAddress > end)) {
+    std::wstring modName = GetSectionName(exceptionPtrs->ExceptionRecord->ExceptionAddress);
+    Logger::Instance().info("Windows Exception (%x). Origin: \"%ls\". Last hooked call: %s",
+                            exceptionPtrs->ExceptionRecord->ExceptionCode, modName.c_str(), s_LastFunction);
+    return EXCEPTION_CONTINUE_SEARCH;
+  } else {
+    Logger::Instance().error("Windows Exception (%x). Last hooked call: %s", exceptionPtrs->ExceptionRecord->ExceptionCode, s_LastFunction);
+  }
+
+  RemoveHooks();
+
+  writeMiniDump(exceptionPtrs);
 
   ::RemoveVectoredExceptionHandler(exceptionHandler);
 

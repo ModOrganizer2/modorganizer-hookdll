@@ -471,12 +471,9 @@ void ModInfo::addRemoval(const std::wstring &fileName, int origin)
     }
   }
 
-  WCHAR temp[MAX_PATH];
-  getFullPathName(fileName.c_str(), temp, MAX_PATH);
-
   RemovalInfo newInfo;
   newInfo.origin = origin;
-  newInfo.fileName.assign(temp);
+  newInfo.fileName.assign(fileName);
   newInfo.time = now;
   m_RemovalInfo.push_back(newInfo);
 }
@@ -503,14 +500,14 @@ std::wstring ModInfo::getRemovedLocation(const std::wstring &fileName)
 
 void ModInfo::removeModFile(const std::wstring &fileName)
 {
-  WCHAR temp[MAX_PATH];
-  getFullPathName(fileName.c_str(), temp, MAX_PATH);
+  WCHAR fullPath[MAX_PATH];
+  getFullPathName(fileName.c_str(), fullPath, MAX_PATH);
 
-  if ((StartsWith(temp, m_DataPathAbsoluteW.c_str())) &&
-      (wcslen(temp) != m_DataPathAbsoluteW.length())) {
+  if (StartsWith(fullPath, m_DataPathAbsoluteW.c_str()) &&
+      (wcslen(fullPath) != m_DataPathAbsoluteW.length())) {
     int origin = -1;
-    m_DirectoryStructure.removeFile(temp + m_DataPathAbsoluteW.length() + 1, &origin);
-    addRemoval(fileName, origin);
+    m_DirectoryStructure.removeFile(fullPath + m_DataPathAbsoluteW.length() + 1, &origin);
+    addRemoval(fullPath, origin);
     LOGDEBUG("remove mod file %ls", fileName.c_str());
   }
 
@@ -610,10 +607,24 @@ HANDLE ModInfo::dataSearch(LPCWSTR absoluteFileName,
     addSearchResults(searchBuffer, primaryHandle, dataHandle, relativePath, searchData);
   }
 
+  const DirectoryEntry *searchDirectory = NULL;
+  if (relativePath[0] != '\0') {
+    // micro-optimization: don't search if the parent directory doesn't even exist in the mod
+    std::wstring parentDir(relativePath + 1);
+    parentDir.append(L"\\");
+    m_DirectoryStructure.searchFile(parentDir, &searchDirectory);
+  }
+
   // add elements from the mod directories
   for (std::vector<std::wstring>::iterator iter = m_ModList.begin(); iter != m_ModList.end(); ++iter) {
     std::wostringstream fullPath;
     fullPath << m_ModsPath << "\\" << *iter << (absoluteFileName + filenameOffset);
+    if ((relativePath[0] != '\0') &&
+        ((searchDirectory == NULL) ||
+         !searchDirectory->hasContentsFromOrigin(m_DirectoryStructure.getOriginByName(*iter).getID()))) {
+      continue;
+    }
+
     ::ZeroMemory(&searchData, sizeof(WIN32_FIND_DATAW));
     dataHandle = FindFirstFileExW_reroute(fullPath.str().c_str(), fInfoLevelId, &searchData, fSearchOp, lpSearchFilter, dwAdditionalFlags);
     if (dataHandle != INVALID_HANDLE_VALUE) {
@@ -845,7 +856,6 @@ std::wstring ModInfo::getPath(LPCWSTR originalName, size_t offset, int &origin)
   bool archive = false;
   origin = m_DirectoryStructure.getOrigin(originalName + offset + 1, archive);
   if (archive) {
-    LOGDEBUG("using %ls from archive", originalName);
     return std::wstring();
   } else if (origin == -1) {
     return std::wstring();

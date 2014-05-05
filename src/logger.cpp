@@ -180,10 +180,8 @@ void Logger::log(const char* prefix, const char* format, va_list argList)
   memset(buffer, '\0', sizeof(char) * BUFFERSIZE + 1);
   memset(buffer2, '\0', sizeof(char) * BUFFERSIZE + 51);
   wvnsprintfA(buffer, BUFFERSIZE, format, argList);
-//  vsnprintf(buffer, BUFFERSIZE, format, argList);
   SYSTEMTIME now;
   ::GetLocalTime(&now);
-//  int len = _snprintf(buffer2, BUFFERSIZE + 50, "%s (%.2d:%.2d:%.2d.%.4d): %s\r\n", prefix, now.wHour, now.wMinute, now.wSecond, now.wMilliseconds, buffer);
   int len = wnsprintfA(buffer2, BUFFERSIZE + 50, "%s (%.2d:%.2d:%.2d.%.4d): %s\r\n", prefix, now.wHour, now.wMinute, now.wSecond, now.wMilliseconds, buffer);
   if (len < 0) {
     len = BUFFERSIZE + 50;
