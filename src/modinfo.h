@@ -73,6 +73,8 @@ public:
 
   BOOL searchExists(HANDLE handle);
 
+  bool isFileHidden(const std::wstring &fileName) const;
+
   std::wstring getProfileName() const { return m_ProfileName; }
   std::wstring getProfilePath() const { return m_ProfilePath; }
 

@@ -753,6 +753,11 @@ BOOL ModInfo::searchExists(HANDLE handle)
   return m_Searches.find(handle) != m_Searches.end();
 }
 
+bool ModInfo::isFileHidden(const std::wstring &fileName) const
+{
+  return m_HiddenFiles.find(fileName) != m_HiddenFiles.end();
+}
+
 
 const std::string &ModInfo::getTweakedIniA() const
 {

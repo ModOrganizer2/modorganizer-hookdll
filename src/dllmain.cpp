@@ -2170,7 +2170,7 @@ NTSTATUS addNtSearchData(const std::wstring &localPath,
         std::wstring fileName;
         GetInfoData(pos, FileInformationClass, offset, fileName);
 
-        bool add = true;
+        bool add = !modInfo->isFileHidden(fileName);
         if (fileName.length() > 0) {
           std::wstring fileNameL = fileName;
           boost::algorithm::to_lower(fileNameL);
