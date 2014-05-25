@@ -1927,7 +1927,6 @@ DWORD WINAPI GetFileVersionInfoSizeW_rep(LPCWSTR lptstrFilename, LPDWORD lpdwHan
 DWORD WINAPI GetModuleFileNameW_rep(HMODULE hModule, LPWSTR lpFilename, DWORD nSize)
 {
   PROFILE();
-
   DWORD res = GetModuleFileNameW_reroute(hModule, lpFilename, nSize);
   if (res != 0) {
     bool isRerouted = false;

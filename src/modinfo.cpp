@@ -507,7 +507,7 @@ void ModInfo::removeModFile(const std::wstring &fileName)
       (wcslen(fullPath) != m_DataPathAbsoluteW.length())) {
     int origin = -1;
     m_DirectoryStructure.removeFile(fullPath + m_DataPathAbsoluteW.length() + 1, &origin);
-    addRemoval(fullPath, origin);
+    addRemoval(fileName, origin);
     LOGDEBUG("remove mod file %ls", fileName.c_str());
   }
 
