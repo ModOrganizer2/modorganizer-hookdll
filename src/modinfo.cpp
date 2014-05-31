@@ -155,7 +155,7 @@ ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirecto
     if (buffer[0] == '\0') {
       continue;
     }
-    if ((buffer[0] != '#') && (buffer[0] != '-')) {
+    if ((buffer[0] != '#') && (buffer[0] != '-') && (buffer[0] != '*')) {
       char *bufferPtr = buffer;
       if (*bufferPtr == '+') {
         ++bufferPtr;
