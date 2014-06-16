@@ -23,6 +23,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include <cassert>
 #include <exception>
 #include <stdexcept>
+#include <windows_error.h>
 #include "logger.h"
 
 
@@ -231,7 +232,7 @@ BOOL ApiHook::InsertHook(LPVOID original, LPVOID replacement)
 												sizeof(jump),
 												PAGE_EXECUTE_WRITECOPY,
 												&oldprotect)) {
-    throw std::runtime_error("failed to change virtual protection");
+    throw MOShared::windows_error("failed to change virtual protection");
 	}
 
   // Copy the jump instruction to the target address and insert the reroute addresses
@@ -240,7 +241,7 @@ BOOL ApiHook::InsertHook(LPVOID original, LPVOID replacement)
 
 	// restore old memory protection
 	if (!::VirtualProtect(original, sizeof(jump), oldprotect, &ignore)) {
-    throw std::runtime_error("failed to change virtual protection");
+    throw MOShared::windows_error("failed to change virtual protection");
 	}
 
 	return TRUE;
@@ -256,7 +257,7 @@ void ApiHook::RemoveHook()
                           sizeof(jump),
                           PAGE_EXECUTE_WRITECOPY,
                           &oldprotect)) {
-      throw std::runtime_error("failed to change virtual protection");
+      throw MOShared::windows_error("failed to change virtual protection");
     }
 
     // Copy the jump instruction to the target address and insert the reroute addresses
@@ -265,7 +266,7 @@ void ApiHook::RemoveHook()
 
     // restore old memory protection
     if (!::VirtualProtect(_origPos, sizeof(jump), oldprotect, &ignore)) {
-      throw std::runtime_error("failed to change virtual protection");
+      throw MOShared::windows_error("failed to change virtual protection");
     }
   }
 }
