@@ -173,21 +173,21 @@ ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirecto
   file.close();
   int index = 1;
 
+  time_t start = time(NULL);
+
+  m_DirectoryStructure.addFromOrigin(L"data", GameInfo::instance().getGameDirectory() + L"\\data", 0);
+
   // mod list is sorted by priority descending, hence the reverse iterator
   for (std::vector<std::wstring>::reverse_iterator modIter = m_ModList.rbegin(); modIter != m_ModList.rend(); ++modIter, ++index) {
-    temp.str(L""); temp.clear();
-    temp << m_ModsPath << "\\" << *modIter;
-    m_DirectoryStructure.addFromOrigin(*modIter, temp.str(), index);
+    m_DirectoryStructure.addFromOrigin(*modIter, m_ModsPath + L"\\" + *modIter, index);
 
     WIN32_FIND_DATAW findData;
-    std::wstring bsaSearch = temp.str().append(L"\\*.bsa");
-    HANDLE search = ::FindFirstFileW(bsaSearch.c_str(), &findData);
+    HANDLE search = ::FindFirstFileW((temp.str() + L"\\*.bsa").c_str(), &findData);
     BOOL success = search != INVALID_HANDLE_VALUE;
     while (success) {
-      std::wstring tempStr = temp.str();
       m_DirectoryStructure.addFromBSA(*modIter,
-                                      tempStr,
-                                      tempStr.append(L"\\").append(findData.cFileName),
+                                      temp.str(),
+                                      temp.str() + L"\\" + findData.cFileName,
                                       index);
       success = ::FindNextFileW(search, &findData);
     }
@@ -198,9 +198,7 @@ ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirecto
 
   m_DirectoryStructure.addFromOrigin(L"overwrite", GameInfo::instance().getOverwriteDir(), index);
 
-  temp.str(L""); temp.clear();
-  temp << GameInfo::instance().getGameDirectory() << "\\data";
-  m_DirectoryStructure.addFromOrigin(L"data", temp.str(), 0);
+  LOGDEBUG("update vfs took %ld seconds", time(NULL) - start);
 
   m_DataOrigin = m_DirectoryStructure.getOriginByName(L"data").getID();
 
