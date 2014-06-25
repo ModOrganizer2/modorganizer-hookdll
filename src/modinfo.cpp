@@ -179,21 +179,22 @@ ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirecto
 
   // mod list is sorted by priority descending, hence the reverse iterator
   for (std::vector<std::wstring>::reverse_iterator modIter = m_ModList.rbegin(); modIter != m_ModList.rend(); ++modIter, ++index) {
-    m_DirectoryStructure.addFromOrigin(*modIter, m_ModsPath + L"\\" + *modIter, index);
+    std::wstring modPath = m_ModsPath + L"\\" + *modIter;
+    m_DirectoryStructure.addFromOrigin(*modIter, modPath, index);
 
     WIN32_FIND_DATAW findData;
-    HANDLE search = ::FindFirstFileW((temp.str() + L"\\*.bsa").c_str(), &findData);
+    HANDLE search = ::FindFirstFileW((modPath + L"\\*.bsa").c_str(), &findData);
     BOOL success = search != INVALID_HANDLE_VALUE;
     while (success) {
       m_DirectoryStructure.addFromBSA(*modIter,
-                                      temp.str(),
-                                      temp.str() + L"\\" + findData.cFileName,
+                                      modPath,
+                                      modPath + L"\\" + findData.cFileName,
                                       index);
       success = ::FindNextFileW(search, &findData);
     }
 
     m_UpdateOriginIDs.push_back(m_DirectoryStructure.getOriginByName(*modIter).getID());
-    m_UpdateHandles.push_back(::FindFirstChangeNotificationW(temp.str().c_str(), TRUE, FILE_NOTIFY_CHANGE_FILE_NAME));
+    m_UpdateHandles.push_back(::FindFirstChangeNotificationW(modPath.c_str(), TRUE, FILE_NOTIFY_CHANGE_FILE_NAME));
   }
 
   m_DirectoryStructure.addFromOrigin(L"overwrite", GameInfo::instance().getOverwriteDir(), index);
@@ -403,17 +404,6 @@ void ModInfo::loadDeleters(const std::string &listFileName)
   }
 }
 
-
-void ModInfo::addModDirectory(const std::wstring& modPath)
-{
-  std::wstring name;
-  size_t namePos = modPath.find_last_of(L"/\\");
-  // TODO this fails if modPath ends with a backslash. How does the offset in find_last_of work?
-  if (namePos != std::string::npos) {
-    name = modPath.substr(namePos + 1);
-  }
-  m_DirectoryStructure.addFromOrigin(name, modPath, static_cast<int>(m_ModList.size()));
-}
 
 
 void ModInfo::addModFile(const std::wstring &fileName)

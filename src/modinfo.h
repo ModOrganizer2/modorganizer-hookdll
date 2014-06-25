@@ -49,7 +49,6 @@ public:
   inline void checkPathAlternative(LPCWSTR path);
   void addAlternativePath(const std::wstring &path);
 
-  void addModDirectory(const std::wstring &modPath);
   void addModFile(const std::wstring &fileName);
   void addOverwriteFile(const std::wstring &fileName);
   void addModFile(LPCWSTR originName, const std::wstring &fileName);
