@@ -155,14 +155,14 @@ ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirecto
     if (buffer[0] == '\0') {
       continue;
     }
-    if ((buffer[0] != '#') && (buffer[0] != '-') && (buffer[0] != '*')) {
+    if ((buffer[0] != '#') && (buffer[0] != '-')) {
       char *bufferPtr = buffer;
       if (*bufferPtr == '+') {
         ++bufferPtr;
-      }
+      } // leave * for now to identify foreign mods, it can't be part of a valid file name anyway
       temp.str(L""); temp.clear();
       temp << m_ModsPath << L"\\" << ToWString(bufferPtr, true);
-      if (!FileExists(temp.str())) {
+      if ((buffer[0] != '*') && !FileExists(temp.str())) {
         Logger::Instance().error("mod \"%ls\" doesn't exist, maybe there is a typo?", temp.str().c_str());
       } else {
         Logger::Instance().info("using mod \"%s\"", bufferPtr);
@@ -179,22 +179,32 @@ ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirecto
 
   // mod list is sorted by priority descending, hence the reverse iterator
   for (std::vector<std::wstring>::reverse_iterator modIter = m_ModList.rbegin(); modIter != m_ModList.rend(); ++modIter, ++index) {
-    std::wstring modPath = m_ModsPath + L"\\" + *modIter;
-    m_DirectoryStructure.addFromOrigin(*modIter, modPath, index);
-
+    std::wstring modName = *modIter;
+    std::wstring modPath;
     WIN32_FIND_DATAW findData;
-    HANDLE search = ::FindFirstFileW((modPath + L"\\*.bsa").c_str(), &findData);
-    BOOL success = search != INVALID_HANDLE_VALUE;
+    HANDLE bsaSearch = INVALID_HANDLE_VALUE;
+    if (modIter->at(0) == L'*') {
+      modName = modName.substr(1);
+      modPath = GameInfo::instance().getGameDirectory() + L"\\data";
+      m_DirectoryStructure.createOrigin(modName, modPath, index);
+      bsaSearch = ::FindFirstFileW((modPath + L"\\" + modName + L"*.bsa").c_str(), &findData);
+    } else {
+      modPath = m_ModsPath + L"\\" + modName;
+      m_DirectoryStructure.addFromOrigin(modName, modPath, index);
+      m_UpdateHandles.push_back(::FindFirstChangeNotificationW(modPath.c_str(), TRUE, FILE_NOTIFY_CHANGE_FILE_NAME));
+
+      bsaSearch = ::FindFirstFileW((modPath + L"\\*.bsa").c_str(), &findData);
+    }
+    BOOL success = bsaSearch != INVALID_HANDLE_VALUE;
     while (success) {
-      m_DirectoryStructure.addFromBSA(*modIter,
+      m_DirectoryStructure.addFromBSA(modName,
                                       modPath,
                                       modPath + L"\\" + findData.cFileName,
                                       index);
-      success = ::FindNextFileW(search, &findData);
+      success = ::FindNextFileW(bsaSearch, &findData);
     }
 
-    m_UpdateOriginIDs.push_back(m_DirectoryStructure.getOriginByName(*modIter).getID());
-    m_UpdateHandles.push_back(::FindFirstChangeNotificationW(modPath.c_str(), TRUE, FILE_NOTIFY_CHANGE_FILE_NAME));
+    m_UpdateOriginIDs.push_back(m_DirectoryStructure.getOriginByName(modName).getID());
   }
 
   m_DirectoryStructure.addFromOrigin(L"overwrite", GameInfo::instance().getOverwriteDir(), index);
@@ -605,6 +615,9 @@ HANDLE ModInfo::dataSearch(LPCWSTR absoluteFileName,
 
   // add elements from the mod directories
   for (std::vector<std::wstring>::iterator iter = m_ModList.begin(); iter != m_ModList.end(); ++iter) {
+    if (iter->at(0) == L'*') {
+      continue;
+    }
     std::wostringstream fullPath;
     fullPath << m_ModsPath << "\\" << *iter << (absoluteFileName + filenameOffset);
     if ((relativePath[0] != '\0') &&

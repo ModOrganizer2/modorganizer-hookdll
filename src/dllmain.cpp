@@ -124,6 +124,7 @@ std::map<std::pair<int, DWORD>, bool> skipMap;
 
 std::string bsaResourceList;
 std::map<std::string, std::string> bsaMap;
+std::set<std::string> usedBSAList;
 
 std::set<std::string> iniFilesA;
 
@@ -398,6 +399,11 @@ HANDLE WINAPI CreateFileW_rep(LPCWSTR lpFileName,
                               HANDLE hTemplateFile)
 {
   PROFILE();
+
+  //  LPCWSTR baseName = GetBaseName(lpFileName);
+
+  /*  */
+
   std::wstring rerouteFilename;
 
   WCHAR fullFileNameBuf[MAX_PATH];
@@ -431,6 +437,14 @@ HANDLE WINAPI CreateFileW_rep(LPCWSTR lpFileName,
 
   if (rerouteFilename.length() == 0) {
     LPCWSTR baseName = GetBaseName(lpFileName);
+
+    if (usedBSAList.find(ToLower(ToString(baseName, true))) != usedBSAList.end()) {
+      // hide bsa files loaded already through the resource archive list
+      LOGDEBUG("%ls hidden from the game", lpFileName);
+      ::SetLastError(ERROR_FILE_NOT_FOUND);
+      return INVALID_HANDLE_VALUE;
+    }
+
     size_t pathLen = baseName - lpFileName;
 
     std::map<std::string, std::string>::iterator bsaName = bsaMap.find(ToString(baseName, true));
@@ -440,6 +454,9 @@ HANDLE WINAPI CreateFileW_rep(LPCWSTR lpFileName,
       if (!rerouted) {
         LOGDEBUG("createfile bsa not rerouted: %ls -> %ls -> %ls", lpFileName, bsaPath.c_str(), rerouteFilename.c_str());
       }
+      // bsa found under its obfuscated name, don't let the game find it under its original name any more, otherwise that
+      // would overwrite the load order again
+      usedBSAList.insert(ToLower(bsaName->second));
     } else {
       rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName, false, &rerouted);
     }
@@ -2376,7 +2393,6 @@ BOOL InitHooks()
     }
 
     LOGDEBUG("all hooks installed");
-
   } catch (const std::exception& E) {
     Logger::Instance().error("Exception: %s", E.what());
     return FALSE;
