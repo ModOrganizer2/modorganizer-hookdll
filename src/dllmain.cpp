@@ -400,10 +400,6 @@ HANDLE WINAPI CreateFileW_rep(LPCWSTR lpFileName,
 {
   PROFILE();
 
-  //  LPCWSTR baseName = GetBaseName(lpFileName);
-
-  /*  */
-
   std::wstring rerouteFilename;
 
   WCHAR fullFileNameBuf[MAX_PATH];

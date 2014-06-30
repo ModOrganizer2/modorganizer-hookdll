@@ -192,6 +192,7 @@ ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirecto
       modPath = m_ModsPath + L"\\" + modName;
       m_DirectoryStructure.addFromOrigin(modName, modPath, index);
       m_UpdateHandles.push_back(::FindFirstChangeNotificationW(modPath.c_str(), TRUE, FILE_NOTIFY_CHANGE_FILE_NAME));
+      m_UpdateOriginIDs.push_back(m_DirectoryStructure.getOriginByName(modName).getID());
 
       bsaSearch = ::FindFirstFileW((modPath + L"\\*.bsa").c_str(), &findData);
     }
@@ -204,7 +205,6 @@ ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirecto
       success = ::FindNextFileW(bsaSearch, &findData);
     }
 
-    m_UpdateOriginIDs.push_back(m_DirectoryStructure.getOriginByName(modName).getID());
   }
 
   m_DirectoryStructure.addFromOrigin(L"overwrite", GameInfo::instance().getOverwriteDir(), index);
