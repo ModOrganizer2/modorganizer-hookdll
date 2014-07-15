@@ -2327,7 +2327,7 @@ BOOL InitHooks()
 
   OSVERSIONINFO versionInfo;
   versionInfo.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
-  GetVersionEx(&versionInfo);
+  ::GetVersionEx(&versionInfo);
 
   try {
     INITHOOK(TEXT("kernel32.dll"), CreateProcessA);
