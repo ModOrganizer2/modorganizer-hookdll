@@ -727,13 +727,30 @@ BOOL WINAPI MoveFileExW_rep(LPCWSTR lpExistingFileName, LPCWSTR lpNewFileName, D
   modInfo->getFullPathName(lpNewFileName, fullDestinationName, MAX_PATH);
 
   // source file definitively needs to be rerouted if it originates from the fake directory
-  std::wstring sourceReroute = modInfo->getRerouteOpenExisting(fullSourceName);
+  bool rerouted = false;
+  int originID = -1;
+  std::wstring sourceReroute = modInfo->getRerouteOpenExisting(fullSourceName, false, &rerouted, &originID);
   std::wstring destinationReroute = fullDestinationName;
 
   if (StartsWith(fullDestinationName, modInfo->getDataPathW().c_str())) {
+    destinationReroute = modInfo->getRemovedLocation(fullDestinationName);
+
+    // usually, always move to the overwrite directory. However, in the "create tmp, remove original, move tmp to original"-sequence
+    // we'd rather have the modified file in the original location. If the source file was part of a mod we leave the file in that
+    // mod
     std::wostringstream temp;
-    temp << GameInfo::instance().getOverwriteDir() << "\\" << (fullDestinationName + modInfo->getDataPathW().length() + 1);
-    destinationReroute = temp.str();
+    if (!destinationReroute.empty()) {
+      // In the "create tmp, remove original, move tmp to original"-sequence we'd rather have the modified file in the original location.
+    } else if (rerouted && (originID != -1)) {
+      // source file is rerouted, destination file would be in data. use the same directory instead
+      FilesOrigin origin = modInfo->getFilesOrigin(originID);
+      temp << origin.getPath() << "\\" << (fullDestinationName + modInfo->getDataPathW().length() + 1);
+      destinationReroute = temp.str();
+    } else {
+      // default case - reroute to overwrite
+      temp << GameInfo::instance().getOverwriteDir() << "\\" << (fullDestinationName + modInfo->getDataPathW().length() + 1);
+      destinationReroute = temp.str();
+    }
   }
 
   { // create intermediate directories
@@ -761,15 +778,24 @@ BOOL WINAPI MoveFileW_rep(LPCWSTR lpExistingFileName, LPCWSTR lpNewFileName)
   modInfo->getFullPathName(lpNewFileName, fullDestinationName, MAX_PATH);
 
   // source file definitively needs to be rerouted if it originates from the fake directory
-  std::wstring sourceReroute = modInfo->getRerouteOpenExisting(fullSourceName);
+  bool rerouted = false;
+  int originID = -1;
+  std::wstring sourceReroute = modInfo->getRerouteOpenExisting(fullSourceName, false, &rerouted, &originID);
   std::wstring destinationReroute = fullDestinationName;
   LPCWSTR sPos = NULL;
   if (StartsWith(fullDestinationName, modInfo->getDataPathW().c_str())) {
-    // usually, always move to the overwrite directory. However, in the "create tmp, remove original, move tmp to original"-sequence
-    // we'd rather have the modified file in the original location
     destinationReroute = modInfo->getRemovedLocation(fullDestinationName);
-    if (destinationReroute.empty()) {
-      std::wostringstream temp;
+
+    std::wostringstream temp;
+    if (!destinationReroute.empty()) {
+      // In the "create tmp, remove original, move tmp to original"-sequence we'd rather have the modified file in the original location.
+    } else if (rerouted && (originID != -1)) {
+      // source file is rerouted, destination file would be in data. use the same directory instead
+      FilesOrigin origin = modInfo->getFilesOrigin(originID);
+      temp << origin.getPath() << "\\" << (fullDestinationName + modInfo->getDataPathW().length() + 1);
+      destinationReroute = temp.str();
+    } else {
+      // default case - reroute to overwrite
       temp << GameInfo::instance().getOverwriteDir() << "\\" << (fullDestinationName + modInfo->getDataPathW().length() + 1);
       destinationReroute = temp.str();
     }

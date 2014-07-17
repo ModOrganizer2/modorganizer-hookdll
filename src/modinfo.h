@@ -81,7 +81,7 @@ public:
   const std::wstring &getTweakedIniW() const;
 
   std::string getRerouteOpenExisting(LPCSTR originalName);
-  std::wstring getRerouteOpenExisting(LPCWSTR originalName, bool preferOriginal = false, bool *rerouted = NULL);
+  std::wstring getRerouteOpenExisting(LPCWSTR originalName, bool preferOriginal = false, bool *rerouted = NULL, int *originID = NULL);
   std::wstring getPath(LPCWSTR originalName, size_t offset, int &origin);
 
   const std::string &getDataPathA() const { return m_DataPathAbsoluteA; }
@@ -102,6 +102,8 @@ public:
   std::wstring reverseReroute(const std::wstring &path, bool *rerouted = NULL);
 
   const std::vector<std::wstring> &modNames() const { return m_ModList; }
+
+  const MOShared::FilesOrigin &getFilesOrigin(int originID) const;
 
 private:
 
