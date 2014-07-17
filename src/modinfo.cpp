@@ -307,7 +307,10 @@ std::wstring ModInfo::reverseReroute(const std::wstring &path, bool *rerouted)
   return result;
 }
 
-
+const FilesOrigin &ModInfo::getFilesOrigin(int originID) const
+{
+  return m_DirectoryStructure.getOriginByID(originID);
+}
 
 bool DirectoryExists(const std::wstring &directory)
 {
@@ -319,7 +322,6 @@ bool DirectoryExists(const std::wstring &directory)
     return false;
   }
 }
-
 
 bool ModInfo::setCwd(const std::wstring &currentDirectory)
 {
@@ -798,7 +800,7 @@ void ModInfo::getFullPathName(LPCWSTR originalName, LPWSTR targetBuffer, size_t 
 }
 
 
-std::wstring ModInfo::getRerouteOpenExisting(LPCWSTR originalName, bool preferOriginal, bool *rerouted)
+std::wstring ModInfo::getRerouteOpenExisting(LPCWSTR originalName, bool preferOriginal, bool *rerouted, int *originID)
 {
   PROFILE_S();
 
@@ -827,14 +829,17 @@ std::wstring ModInfo::getRerouteOpenExisting(LPCWSTR originalName, bool preferOr
     if (rerouted != NULL) {
       *rerouted = true;
     }
-  } else if (m_SavesReroute && EndsWith(temp, L".skse") && ((sPos = wcswcs(temp, L"\\My Games\\Skyrim\\Saves\\")) != NULL)) {
+  } else if (m_SavesReroute
+             && (EndsWith(temp, L".skse")
+                 || EndsWith(temp, L".obse"))
+             && ((sPos = wcswcs(temp, L"\\My Games\\Skyrim\\Saves\\")) != NULL)) {
     // !workaround! skse saving to hard-coded path
     result = m_ProfilePath.substr().append(L"\\saves\\").append(sPos + 23);
     if (rerouted != NULL) {
       *rerouted = true;
     }
-  } else if ((StartsWith(temp, m_DataPathAbsoluteW.c_str())) &&
-             (wcslen(temp) != m_DataPathAbsoluteW.length())) {
+  } else if (StartsWith(temp, m_DataPathAbsoluteW.c_str())
+             && (wcslen(temp) != m_DataPathAbsoluteW.length())) {
     if (!preferOriginal || !FileExists_reroute(temp)) {
       int origin = 0;
       result = getPath(temp, m_DataPathAbsoluteW.length(), origin);
@@ -844,6 +849,9 @@ std::wstring ModInfo::getRerouteOpenExisting(LPCWSTR originalName, bool preferOr
         // it's not rerouted if the file comes from data directory
         if ((rerouted != NULL) && (origin != m_DataOrigin)) {
           *rerouted = true;
+          if (originID != NULL) {
+            *originID = origin;
+          }
         }
       }
     } else {
@@ -852,6 +860,7 @@ std::wstring ModInfo::getRerouteOpenExisting(LPCWSTR originalName, bool preferOr
   } else {
     result = originalName;
   }
+
   return result;
 }
 
