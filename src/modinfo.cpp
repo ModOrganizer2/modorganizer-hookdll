@@ -184,10 +184,9 @@ ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirecto
     WIN32_FIND_DATAW findData;
     HANDLE bsaSearch = INVALID_HANDLE_VALUE;
     if (modIter->at(0) == L'*') {
-      modName = modName.substr(1);
       modPath = GameInfo::instance().getGameDirectory() + L"\\data";
       m_DirectoryStructure.createOrigin(modName, modPath, index);
-      bsaSearch = ::FindFirstFileW((modPath + L"\\" + modName + L"*.bsa").c_str(), &findData);
+      bsaSearch = ::FindFirstFileW((modPath + L"\\" + modName.substr(1) + L"*.bsa").c_str(), &findData);
     } else {
       modPath = m_ModsPath + L"\\" + modName;
       m_DirectoryStructure.addFromOrigin(modName, modPath, index);
