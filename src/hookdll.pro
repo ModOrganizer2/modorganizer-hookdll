@@ -57,7 +57,17 @@ CONFIG(debug, debug|release) {
   QMAKE_LFLAGS += /DEBUG /INCREMENTAL:NO /LTCG /OPT:REF /OPT:ICF
   PRE_TARGETDEPS += $$OUT_PWD/../shared/release/mo_shared.lib \
     $$OUT_PWD/../bsatk/release/bsatk.lib
+
 }
+
+
+# leak detection with vld
+INCLUDEPATH += "E:/Visual Leak Detector/include"
+LIBS += -L"E:/Visual Leak Detector/lib/Win32"
+#DEFINES += LEAK_CHECK_WITH_VLD
+
+# custom leak detection
+LIBS += -lDbgHelp
 
 DEFINES += UNICODE \
     _UNICODE \
