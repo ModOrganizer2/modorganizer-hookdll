@@ -260,9 +260,12 @@ bool ModInfo::detectOverwriteChange()
     int originId = m_UpdateOriginIDs[*iter];
     try {
       FilesOrigin &origin = m_DirectoryStructure.getOriginByID(originId);
-      origin.enable(false);
-      HookLock lock; // addFromOrigin uses FindFirstFileEx, rerouting that could be disastrous
-      m_DirectoryStructure.addFromOrigin(origin.getName(), origin.getPath(), origin.getPriority());
+      time_t before = time(NULL);
+      {
+        HookLock lock; // addFromOrigin uses FindFirstFileEx, rerouting that could be disastrous
+        m_DirectoryStructure.addFromOrigin(origin.getName(), origin.getPath(), origin.getPriority());
+      }
+      origin.enable(false, before);
     } catch (const std::exception &e) {
       Logger::Instance().error("failed to update mod directory: %s", e.what());
     }

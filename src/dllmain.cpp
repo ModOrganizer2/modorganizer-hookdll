@@ -53,6 +53,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include <Shellapi.h>
 #include <Psapi.h>
 #include <tuple>
+#ifdef LEAK_CHECK_WITH_VLD
+#include <vld.h>
+#endif // LEAK_CHECK_WITH_VLD
 
 
 using namespace MOShared;
@@ -693,8 +696,8 @@ BOOL WINAPI DeleteFileW_rep(LPCWSTR lpFileName)
 
   if (StartsWith(buffer, modInfo->getDataPathW().c_str())) {
     std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
-    modInfo->removeModFile(lpFileName);
     Logger::Instance().info("deleting %ls -> %ls", lpFileName, rerouteFilename.c_str());
+    modInfo->removeModFile(lpFileName);
     return DeleteFileW_reroute(rerouteFilename.c_str());
   } else if ((sPos = wcswcs(buffer, AppConfig::localSavePlaceholder())) != NULL) {
     std::wstring rerouteFilename = modInfo->getProfilePath().append(L"\\saves\\").append(sPos + wcslen(AppConfig::localSavePlaceholder()));
