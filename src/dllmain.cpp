@@ -58,6 +58,11 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #endif // LEAK_CHECK_WITH_VLD
 
 
+
+#include <Windows.h>
+#include <Shlwapi.h>
+#include <ShlObj.h>
+
 using namespace MOShared;
 
 
@@ -279,7 +284,7 @@ BOOL WINAPI CreateProcessA_rep(LPCSTR lpApplicationName,
     Logger::Instance().error("failed to inject into %s: %s", lpApplicationName, e.what());
   }
 
-  if (  (!susp) && (::ResumeThread(lpProcessInformation->hThread) == (DWORD)-1)) {
+  if (!susp && (::ResumeThread(lpProcessInformation->hThread) == (DWORD)-1)) {
     Logger::Instance().error("failed to inject into spawned process");
     return FALSE;
   }
@@ -353,7 +358,7 @@ BOOL WINAPI CreateProcessW_rep(LPCWSTR lpApplicationName,
     Logger::Instance().error("failed to inject into %ls: %s", lpApplicationName, e.what());
   }
 
-  if (  (!susp) && (::ResumeThread(lpProcessInformation->hThread) == (DWORD)-1)) {
+  if (!susp && (::ResumeThread(lpProcessInformation->hThread) == (DWORD)-1)) {
     Logger::Instance().error("failed to inject into spawned process");
     return FALSE;
   }
@@ -2624,7 +2629,7 @@ void writeMiniDump(PEXCEPTION_POINTERS exceptionPtrs)
         exceptionInfo.ClientPointers = NULL;
 
         BOOL success = funcDump(::GetCurrentProcess(), ::GetCurrentProcessId(), dumpFile, MiniDumpNormal, &exceptionInfo, NULL, NULL);
-
+        ::FlushFileBuffers(dumpFile);
         ::CloseHandle(dumpFile);
         if (success) {
           Logger::Instance().error("Crash dump created as %ls. Please send this file to the developer of MO", dmpPath);
@@ -2704,33 +2709,53 @@ BOOL Init(int logLevel, const wchar_t *profileName)
     return TRUE;
   }
 
+  {
+    // if a file called mo_path exists in the same directory as the dll, it overrides the
+    // path to the mod organizer
+    std::string hintFileName = ToString(moPath, false);
+    hintFileName.append("\\mo_path.txt");
+    std::wifstream hintFile(hintFileName.c_str(), std::ifstream::in);
+    if (hintFile.is_open()) {
+      hintFile.getline(moPath, MAX_PATH_UNICODE);
+      hintFile.close();
+    }
+  }
+
+  std::wstring moDataPath;
+  {
+    std::wifstream instanceFile(ToString(moPath, false) + "\\INSTANCE");
+    if (instanceFile.is_open()) {
+      wchar_t buffer[MAX_PATH_UNICODE];
+      instanceFile.getline(buffer, MAX_PATH_UNICODE);
+      instanceFile.close();
+      moDataPath = buffer;
+    }
+
+    if (moDataPath.length() == 0) {
+      moDataPath = moPath;
+    } else {
+      wchar_t appDataPath[MAX_PATH];
+      if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA, NULL, SHGFP_TYPE_CURRENT, appDataPath))) {
+        moDataPath = std::wstring(appDataPath) + L"\\ModOrganizer\\" + moDataPath;
+      }
+    }
+  }
+
   // initialised once we know where mo is installed
   std::wostringstream iniName;
   try {
-    {
-      // if a file called mo_path exists in the same directory as the dll, it overrides the
-      // path to the mod organizer
-      std::string hintFileName = ToString(moPath, false);
-      hintFileName.append("\\mo_path.txt");
-      std::wifstream hintFile(hintFileName.c_str(), std::ifstream::in);
-      if (hintFile.is_open()) {
-        hintFile.getline(moPath, MAX_PATH_UNICODE);
-        hintFile.close();
-      }
-    }
-
-    iniName << moPath << "\\modorganizer.ini";
+    iniName << moDataPath << "\\modorganizer.ini";
 
     wchar_t pathTemp[MAX_PATH];
     wchar_t gamePath[MAX_PATH];
     ::GetPrivateProfileStringW(L"General", L"gamePath", L"", pathTemp, MAX_PATH, iniName.str().c_str());
     Canonicalize(gamePath, iniDecode(ToString(pathTemp, false).c_str()).c_str());
 
-    if (!GameInfo::init(moPath, gamePath)) {
+    if (!GameInfo::init(moPath, moDataPath, gamePath)) {
       throw std::runtime_error("game not found");
     }
   } catch (const std::exception &e) {
-    MessageBoxA(NULL, e.what(), "initialisation failed", MB_OK);
+    ::MessageBoxA(NULL, e.what(), "initialisation failed", MB_OK);
     return TRUE;
   }
 
