@@ -1818,21 +1818,24 @@ int STDAPICALLTYPE SHFileOperationA_rep(LPSHFILEOPSTRUCTA lpFileOp)
     for (;;) {
       if (*pos == L'\0') break;
 
-      std::string rerouteFilename;
-      if ((strlen(pos) == modInfo->getDataPathA().length()) &&
-          (strcmp(pos, modInfo->getDataPathA().c_str()) == 0)) {
-        rerouteFilename = ToString(GameInfo::instance().getOverwriteDir(), false);
-      } else if (StartsWith(pos, modInfo->getDataPathA().c_str()) && !::FileExists(pos)) {
-        std::ostringstream temp;
-        temp << ToString(GameInfo::instance().getOverwriteDir(), false) << "\\" << (pos + modInfo->getDataPathA().length());
-        rerouteFilename = temp.str();
+      bool rerouted = false;
+      std::string rerouteFilename = modInfo->getRerouteOpenExisting(pos, false, &rerouted);
+      if (!rerouted && StartsWith(pos, modInfo->getDataPathA().c_str())) {
+        // TODO need to addOverwriteFile in both cases and if the destination is a directory we need to
+        // extract the file name
+        if (strlen(pos) == modInfo->getDataPathA().length()) {
+          rerouteFilename = ToString(GameInfo::instance().getOverwriteDir(), false);
+        } else {
+          std::ostringstream temp;
+          temp << ToString(GameInfo::instance().getOverwriteDir(), false) << "\\" << (pos + modInfo->getDataPathA().length());
+          rerouteFilename = temp.str();
 
-        std::string targetDirectory = rerouteFilename.substr(0, rerouteFilename.find_last_of("\\/"));
-        CreateDirectoryRecursive(ToWString(targetDirectory, false).c_str(), NULL);
-        modInfo->addOverwriteFile(ToWString(rerouteFilename, false));
-      } else {
-        rerouteFilename = modInfo->getRerouteOpenExisting(pos);
+          std::string targetDirectory = rerouteFilename.substr(0, rerouteFilename.find_last_of("\\/"));
+          CreateDirectoryRecursive(ToWString(targetDirectory, false).c_str(), NULL);
+          modInfo->addOverwriteFile(ToWString(rerouteFilename, false));
+        }
       }
+
       newTo.insert(newTo.end(), rerouteFilename.begin(), rerouteFilename.end());
       newTo.push_back('\0');
       pos += strlen(pos) + 1;
@@ -1883,21 +1886,24 @@ int STDAPICALLTYPE SHFileOperationW_rep(LPSHFILEOPSTRUCTW lpFileOp)
     for (;;) {
       if (*pos == L'\0') break;
 
-      std::wstring rerouteFilename;
-      if ((wcslen(pos) == modInfo->getDataPathW().length()) &&
-          (wcscmp(pos, modInfo->getDataPathW().c_str()) == 0)) {
-        rerouteFilename = GameInfo::instance().getOverwriteDir();
-      } else if (StartsWith(pos, modInfo->getDataPathW().c_str()) && !::FileExists(pos)) {
-        std::wostringstream temp;
-        temp << GameInfo::instance().getOverwriteDir() << L"\\" << (pos + modInfo->getDataPathW().length());
-        rerouteFilename = temp.str();
+      bool rerouted = false;
+      std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(pos, false, &rerouted);
+      if (!rerouted && StartsWith(pos, modInfo->getDataPathW().c_str())) {
+        // TODO need to addOverwriteFile in both cases and if the destination is a directory we need to
+        // extract the file name
+        if (wcslen(pos) == modInfo->getDataPathW().length()) {
+          rerouteFilename = GameInfo::instance().getOverwriteDir();
+        } else {
+          std::wostringstream temp;
+          temp << GameInfo::instance().getOverwriteDir() << "\\" << (pos + modInfo->getDataPathW().length());
+          rerouteFilename = temp.str();
 
-        std::wstring targetDirectory = rerouteFilename.substr(0, rerouteFilename.find_last_of(L"\\/"));
-        CreateDirectoryRecursive(targetDirectory.c_str(), NULL);
-        modInfo->addOverwriteFile(rerouteFilename);
-      } else {
-        rerouteFilename = modInfo->getRerouteOpenExisting(pos);
+          std::wstring targetDirectory = rerouteFilename.substr(0, rerouteFilename.find_last_of(L"\\/"));
+          CreateDirectoryRecursive(targetDirectory.c_str(), NULL);
+          modInfo->addOverwriteFile(rerouteFilename);
+        }
       }
+
       newTo.insert(newTo.end(), rerouteFilename.begin(), rerouteFilename.end());
       newTo.push_back(L'\0');
       pos += wcslen(pos) + 1;
@@ -2672,7 +2678,9 @@ LONG WINAPI VEHandler(PEXCEPTION_POINTERS exceptionPtrs)
 
   writeMiniDump(exceptionPtrs);
 
-  ::RemoveVectoredExceptionHandler(exceptionHandler);
+  if (exceptionHandler != NULL) {
+    ::RemoveVectoredExceptionHandler(exceptionHandler);
+  }
 
   return EXCEPTION_CONTINUE_SEARCH;
 }

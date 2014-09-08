@@ -80,7 +80,7 @@ public:
   const std::string &getTweakedIniA() const;
   const std::wstring &getTweakedIniW() const;
 
-  std::string getRerouteOpenExisting(LPCSTR originalName);
+  std::string getRerouteOpenExisting(LPCSTR originalName, bool preferOriginal = false, bool *rerouted = NULL, int *originID = NULL);
   std::wstring getRerouteOpenExisting(LPCWSTR originalName, bool preferOriginal = false, bool *rerouted = NULL, int *originID = NULL);
   std::wstring getPath(LPCWSTR originalName, size_t offset, int &origin);
 

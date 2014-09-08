@@ -12,6 +12,10 @@ TEMPLATE = lib
 
 #DEFINES += HOOKDLL_LIBRARY
 
+!include(../LocalPaths.pri) {
+  message("paths to required libraries need to be set up in LocalPaths.pri")
+}
+
 SOURCES += \
     utility.cpp \
     stdafx.cpp \
@@ -43,7 +47,7 @@ OTHER_FILES += \
 RC_FILE += \
   version.rc
 
-INCLUDEPATH += ../shared ../bsatk "$(BOOSTPATH)"
+INCLUDEPATH += ../shared ../bsatk "$${BOOSTPATH}"
 
 CONFIG(debug, debug|release) {
   LIBS += -L$$OUT_PWD/../shared/debug -L$$OUT_PWD/../bsatk/debug
@@ -60,7 +64,6 @@ CONFIG(debug, debug|release) {
 
 }
 
-
 # leak detection with vld
 INCLUDEPATH += "E:/Visual Leak Detector/include"
 LIBS += -L"E:/Visual Leak Detector/lib/Win32"
@@ -69,7 +72,8 @@ LIBS += -L"E:/Visual Leak Detector/lib/Win32"
 # custom leak detection
 LIBS += -lDbgHelp
 
-DEFINES += UNICODE \
+DEFINES += \
+    UNICODE \
     _UNICODE \
     _CRT_SECURE_NO_WARNINGS \
     _WINDLL \
@@ -83,19 +87,7 @@ QMAKE_CFLAGS_WARN_ON += -W4
 #QMAKE_CXXFLAGS += -GS -RTCs
 
 LIBS += -lmo_shared -lkernel32 -luser32 -lshell32 -ladvapi32 -lshlwapi -lVersion -lbsatk
-
-LIBS += -L"$(ZLIBPATH)/build" -lzlibstatic -L"$(BOOSTPATH)/stage/lib"
-
-CONFIG(debug, debug|release) {
-  SRCDIR = $$OUT_PWD/debug
-  DSTDIR = $$PWD/../../outputd
-} else {
-  SRCDIR = $$OUT_PWD/release
-  DSTDIR = $$PWD/../../output
-}
-
-SRCDIR ~= s,/,$$QMAKE_DIR_SEP,g
-DSTDIR ~= s,/,$$QMAKE_DIR_SEP,g
+LIBS += -L"$${ZLIBPATH}/build" -lzlibstatic -L"$${BOOSTPATH}/stage/lib"
 
 QMAKE_POST_LINK += xcopy /y /I $$quote($$SRCDIR\\hook*.dll) $$quote($$DSTDIR) $$escape_expand(\\n)
 QMAKE_POST_LINK += xcopy /y /I $$quote($$SRCDIR\\hook*.pdb) $$quote($$DSTDIR) $$escape_expand(\\n)

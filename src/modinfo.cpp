@@ -776,10 +776,11 @@ const std::wstring &ModInfo::getTweakedIniW() const
 }
 
 
-std::string ModInfo::getRerouteOpenExisting(LPCSTR originalName)
+std::string ModInfo::getRerouteOpenExisting(LPCSTR originalName, bool preferOriginal, bool *rerouted, int *originID)
 {
-  std::wstring temp = getRerouteOpenExisting(ToWString(originalName, false).c_str());
-  return ToString(getRerouteOpenExisting(temp.c_str()), false);
+//  std::wstring temp = getRerouteOpenExisting(ToWString(originalName, false).c_str());
+//  return ToString(getRerouteOpenExisting(temp.c_str()), false);
+  return ToString(getRerouteOpenExisting(ToWString(originalName, false).c_str(), preferOriginal, rerouted, originID), false);
 }
 
 
