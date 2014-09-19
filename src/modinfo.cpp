@@ -870,27 +870,25 @@ std::wstring ModInfo::getRerouteOpenExisting(LPCWSTR originalName, bool preferOr
   } else {
     result = originalName;
   }
-
   return result;
 }
 
 
-std::wstring ModInfo::getPath(LPCWSTR originalName, size_t offset, int &origin)
+std::wstring ModInfo::getPath(LPCWSTR originalName, size_t offset, int &originId)
 {
   detectOverwriteChange();
   bool archive = false;
-  origin = m_DirectoryStructure.getOrigin(originalName + offset + 1, archive);
+  originId = m_DirectoryStructure.getOrigin(originalName + offset + 1, archive);
   if (archive) {
     return std::wstring();
-  } else if (origin == -1) {
+  } else if (originId == -1) {
     return std::wstring();
   } else {
-    std::wostringstream fullPath;
-    fullPath <<  m_DirectoryStructure.getOriginByID(origin).getPath() << (originalName + offset);
-    if (m_ModAccess.find(origin) == m_ModAccess.end()) {
-      Logger::Instance().debug("first access to %s", ToString(m_DirectoryStructure.getOriginByID(origin).getName(), true).c_str());
-      m_ModAccess.insert(origin);
+    FilesOrigin &origin = m_DirectoryStructure.getOriginByID(originId);
+    std::wstring fullPath = origin.getPath() + (originalName + offset);
+    if (m_ModAccess.insert(originId).second) {
+      Logger::Instance().debug("first access to %ls", origin.getName().c_str());
     }
-    return fullPath.str();
+    return fullPath;
   }
 }

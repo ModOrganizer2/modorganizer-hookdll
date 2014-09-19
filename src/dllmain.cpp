@@ -423,8 +423,11 @@ HANDLE WINAPI CreateFileW_rep(LPCWSTR lpFileName,
   bool rerouted = false;
 
   // newly created files in the data directory go to overwrite
-  if (((dwCreationDisposition == CREATE_ALWAYS) || (dwCreationDisposition == CREATE_NEW) || (dwCreationDisposition == OPEN_ALWAYS)) &&
-      (StartsWith(fullFileName, modInfo->getDataPathW().c_str()))) {
+  if (((dwCreationDisposition == CREATE_ALWAYS)
+       || (dwCreationDisposition == CREATE_NEW)
+       || (dwCreationDisposition == OPEN_ALWAYS)
+       )
+      && (StartsWith(fullFileName, modInfo->getDataPathW().c_str()))) {
     // need to check if the file exists. If it does, act on the existing file, otherwise the behaviour is not transparent
     // if the regular call causes an error message and rerouted to overwrite
     rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName, false, &rerouted);
