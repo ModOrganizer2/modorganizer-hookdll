@@ -2316,6 +2316,7 @@ NTSTATUS WINAPI NtQueryDirectoryFile_rep(HANDLE FileHandle, HANDLE Event, PIO_AP
         destination = reinterpret_cast<uint8_t*>(FileInformation) + offset;
         memcpy(destination, &data[0], size);
 
+        // insert offset to the next dataset in the first 4 bytes
         size = NextDividableBy(size, 8);
         memcpy(destination, &size, sizeof(ULONG));
 

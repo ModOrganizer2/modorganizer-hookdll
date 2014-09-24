@@ -604,7 +604,7 @@ void FuncDisasm::Init(PBYTE code, bool e64bit)
 				(_disasm.IsGroup(4, 4)) ||						// JMP near absolute indirect
 				(_disasm.IsGroup(4, 5)) ||						// JMP far absolute indirect
 				(_disasm.TwoByteOp() && (opcode == 0x34)) ||	// SYSENTER (INTEL)
-				(_disasm.TwoByteOp() && (opcode == 0x34))) {	// SYSCALL (AMD)
+        (_disasm.TwoByteOp() && (opcode == 0x05))) {	// SYSCALL (AMD)
 			// this might be the end of the function
 			std::vector<PBYTE>::iterator iter;
 			bool jumpleft = false;
