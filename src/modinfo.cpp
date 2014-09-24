@@ -87,7 +87,7 @@ ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirecto
     Logger::Instance().info("no ini tweaks file");
   }
 
-  m_ModListPath = m_ProfilePath.substr().append(L"\\modlist.txt");
+  m_ModListPath = m_ProfilePath + L"\\modlist.txt";
 
   {
     wchar_t buffer[MAX_PATH];
@@ -220,12 +220,12 @@ ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirecto
   m_DataOrigin = m_DirectoryStructure.getOriginByName(L"data").getID();
 
   if (enableHiding) {
-    std::wstring hidePattern = m_ProfilePath.substr().append(L"\\hide_*.txt");
+    std::wstring hidePattern = m_ProfilePath + L"\\hide_*.txt";
     WIN32_FIND_DATAW findData;
     HANDLE search = ::FindFirstFileW(hidePattern.c_str(), &findData);
     BOOL success = search != INVALID_HANDLE_VALUE;
     while (success) {
-      loadDeleters(ToString(m_ProfilePath.substr().append(L"\\").append(findData.cFileName), false));
+      loadDeleters(ToString(m_ProfilePath + L"\\" + findData.cFileName, false));
       success = ::FindNextFileW(search, &findData);
     }
     ::FindClose(search);
@@ -278,7 +278,7 @@ bool ModInfo::detectOverwriteChange()
     }
   }
 
-  return modifiedOrigins.size() > 0;
+  return !modifiedOrigins.empty();
 }
 
 
@@ -364,7 +364,7 @@ void ModInfo::addAlternativePath(const std::wstring &path)
   if ((m_DataPathAbsoluteAlternativeW.length() == 0) &&
       (!StartsWith(m_DataPathAbsoluteW.c_str(), path.c_str()))) {
     wchar_t temp[MAX_PATH];
-    Canonicalize(temp, path.substr().append(L"\\data").c_str());
+    Canonicalize(temp, (path + L"\\data").c_str());
     if (FileExists(std::wstring(temp) + L"\\" + GameInfo::instance().getReferenceDataFile())) {
       m_DataPathAbsoluteAlternativeW = temp;
       Logger::Instance().info("executable path differs from data path: %ls", temp);
@@ -829,13 +829,13 @@ std::wstring ModInfo::getRerouteOpenExisting(LPCWSTR originalName, bool preferOr
   LPCWSTR baseName = GetBaseName(temp);
   LPCWSTR sPos = NULL;
   if (GameInfo::instance().rerouteToProfile(baseName, originalName)) {
-    result = m_ProfilePath.substr().append(L"\\").append(baseName);
+    result = m_ProfilePath + L"\\" + baseName;
     if (rerouted != NULL) {
       *rerouted = true;
     }
   } else if ((sPos = wcswcs(temp, AppConfig::localSavePlaceholder())) != NULL) {
     m_SavesReroute = true;
-    result = m_ProfilePath.substr().append(L"\\saves\\").append(sPos + wcslen(AppConfig::localSavePlaceholder()));
+    result = m_ProfilePath + L"\\saves\\" + (sPos + wcslen(AppConfig::localSavePlaceholder()));
     if (rerouted != NULL) {
       *rerouted = true;
     }
@@ -844,7 +844,7 @@ std::wstring ModInfo::getRerouteOpenExisting(LPCWSTR originalName, bool preferOr
                  || EndsWith(temp, L".obse"))
              && ((sPos = wcswcs(temp, L"\\My Games\\Skyrim\\Saves\\")) != NULL)) {
     // !workaround! skse saving to hard-coded path
-    result = m_ProfilePath.substr().append(L"\\saves\\").append(sPos + 23);
+    result = m_ProfilePath + L"\\saves\\" + (sPos + 23);
     if (rerouted != NULL) {
       *rerouted = true;
     }
