@@ -241,7 +241,7 @@ BOOL ApiHook::InsertHook(LPVOID original, LPVOID replacement)
 
 	// restore old memory protection
 	if (!::VirtualProtect(original, sizeof(jump), oldprotect, &ignore)) {
-    throw MOShared::windows_error("failed to change virtual protection");
+    throw MOShared::windows_error("failed to restore virtual protection");
 	}
 
 	return TRUE;
@@ -266,7 +266,7 @@ void ApiHook::RemoveHook()
 
     // restore old memory protection
     if (!::VirtualProtect(_origPos, sizeof(jump), oldprotect, &ignore)) {
-      throw MOShared::windows_error("failed to change virtual protection");
+      throw MOShared::windows_error("failed to restore virtual protection");
     }
   }
 }
