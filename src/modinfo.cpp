@@ -53,11 +53,8 @@ bool FileExists_reroute(const std::wstring &filename)
   ZeroMemory(&findData, sizeof(WIN32_FIND_DATAW));
 
   HANDLE search = INVALID_HANDLE_VALUE;
-  if (FindFirstFileExW_reroute != NULL) {
-    search = FindFirstFileExW_reroute(filename.c_str(), FindExInfoStandard, &findData, FindExSearchNameMatch, NULL, 0);
-  } else {
-    search = FindFirstFileExW(filename.c_str(), FindExInfoStandard, &findData, FindExSearchNameMatch, NULL, 0);
-  }
+  search = FindFirstFileExW_reroute(filename.c_str(), FindExInfoStandard, &findData, FindExSearchNameMatch, NULL, 0);
+
   if (search == INVALID_HANDLE_VALUE) {
     return false;
   } else {
@@ -195,6 +192,7 @@ ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirecto
       m_DirectoryStructure.createOrigin(modName, modPath, index);
       bsaSearch = ::FindFirstFileW((modPath + L"\\" + modName + L"*.bsa").c_str(), &findData);
     } else {
+      LOGDEBUG("indexing %ls", modName.c_str());
       modPath = m_ModsPath + L"\\" + modName;
       m_DirectoryStructure.addFromOrigin(modName, modPath, index);
       m_UpdateHandles.push_back(::FindFirstChangeNotificationW(modPath.c_str(), TRUE, FILE_NOTIFY_CHANGE_FILE_NAME));
@@ -204,6 +202,7 @@ ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirecto
     }
     BOOL success = bsaSearch != INVALID_HANDLE_VALUE;
     while (success) {
+      LOGDEBUG("reading BSA %ls", findData.cFileName);
       m_DirectoryStructure.addFromBSA(modName,
                                       modPath,
                                       modPath + L"\\" + findData.cFileName,
@@ -213,6 +212,7 @@ ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirecto
 
   }
 
+  LOGDEBUG("indexing overwrite");
   m_DirectoryStructure.addFromOrigin(L"overwrite", GameInfo::instance().getOverwriteDir(), index);
 
   LOGDEBUG("update vfs took %ld seconds", time(NULL) - start);
@@ -787,8 +787,6 @@ const std::wstring &ModInfo::getTweakedIniW() const
 
 std::string ModInfo::getRerouteOpenExisting(LPCSTR originalName, bool preferOriginal, bool *rerouted, int *originID)
 {
-//  std::wstring temp = getRerouteOpenExisting(ToWString(originalName, false).c_str());
-//  return ToString(getRerouteOpenExisting(temp.c_str()), false);
   return ToString(getRerouteOpenExisting(ToWString(originalName, false).c_str(), preferOriginal, rerouted, originID), false);
 }
 
@@ -800,7 +798,8 @@ void ModInfo::getFullPathName(LPCWSTR originalName, LPWSTR targetBuffer, size_t 
     WCHAR cwd[MAX_PATH];
     DWORD length = ::GetCurrentDirectoryW_reroute(MAX_PATH, cwd);
     if (StartsWith(originalName, cwd)) {
-      _snwprintf(temp, bufferLength, L"%ls\\%ls", m_CurrentDirectory.c_str(), originalName + static_cast<size_t>(length));
+      _snwprintf(temp, MAX_PATH - 1, L"%ls\\%ls", m_CurrentDirectory.c_str(), originalName + static_cast<size_t>(length));
+      temp[MAX_PATH - 1] = L'\0';
     } else {
       ::PathCombineW(temp, m_CurrentDirectory.c_str(), originalName);
     }
@@ -808,7 +807,7 @@ void ModInfo::getFullPathName(LPCWSTR originalName, LPWSTR targetBuffer, size_t 
     ::GetFullPathNameW_reroute(originalName, static_cast<DWORD>(bufferLength), temp, NULL);
   }
   checkPathAlternative(temp);
-  ::Canonicalize(targetBuffer, temp);
+  Canonicalize(targetBuffer, temp);
 }
 
 
