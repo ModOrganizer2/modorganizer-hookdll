@@ -169,12 +169,12 @@ LPWSTR GetBaseName(LPWSTR string)
 }
 
 
-void Canonicalize(LPWSTR destination, LPCWSTR source)
+void Canonicalize(LPWSTR destination, LPCWSTR source, size_t bufferSize)
 {
   int sourceLen = wcslen(source);
-  int destinationLength = 0;
+  size_t destinationLength = 0;
   bool wasBSlash = false;
-  for (int i = 0; i < sourceLen; ++i) {
+  for (int i = 0; i < sourceLen && destinationLength < bufferSize -1; ++i) {
     if (source[i] == L'/') {
       if (!wasBSlash) {
         destination[destinationLength] = L'\\';

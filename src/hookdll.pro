@@ -57,7 +57,7 @@ CONFIG(debug, debug|release) {
     $$OUT_PWD/../bsatk/debug/bsatk.lib
 } else {
   LIBS += -L$$OUT_PWD/../shared/release -L$$OUT_PWD/../bsatk/release
-  QMAKE_CXXFLAGS += /GL
+  QMAKE_CXXFLAGS += /GL /GS-
   QMAKE_LFLAGS += /DEBUG /INCREMENTAL:NO /LTCG /OPT:REF /OPT:ICF
   PRE_TARGETDEPS += $$OUT_PWD/../shared/release/mo_shared.lib \
     $$OUT_PWD/../bsatk/release/bsatk.lib
