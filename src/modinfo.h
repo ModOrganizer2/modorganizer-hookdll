@@ -66,7 +66,7 @@ public:
                    LPVOID lpFindFileData,
                    FINDEX_SEARCH_OPS fSearchOp,
                    LPVOID lpSearchFilter,
-                   DWORD dwAdditionalFlags);
+                   DWORD dwAdditionalFlags, bool *rerouted);
   BOOL findNext(HANDLE handle, LPWIN32_FIND_DATAW findFileData);
   BOOL findClose(HANDLE handle);
 
@@ -169,12 +169,10 @@ private:
 
   SearchesMap m_Searches;
 
-//  HANDLE m_UpdateNotification;
   std::vector<int> m_UpdateOriginIDs;
   std::vector<HANDLE> m_UpdateHandles;
 
   int m_DataOrigin;
-
 
   bool m_SavesReroute; // workaround skse
 

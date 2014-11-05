@@ -136,9 +136,10 @@ std::set<std::string> usedBSAList;
 
 std::set<std::string> iniFilesA;
 
+std::wstring moPath;
+
 // processes we never want to hook
-std::set<std::string> processBlacklistA;
-std::set<std::wstring> processBlacklistW;
+std::set<std::string> processBlacklist;
 
 static const int MAX_PATH_UNICODE = 256;
 
@@ -210,7 +211,6 @@ BOOL WINAPI CreateProcessA_rep(LPCSTR lpApplicationName,
   PROFILE();
   BOOL susp = dwCreationFlags & CREATE_SUSPENDED;
   DWORD flags = dwCreationFlags | CREATE_SUSPENDED;
-  bool compiler = false;
   bool blacklisted = false;
 
   if (lpApplicationName != NULL) {
@@ -220,7 +220,7 @@ BOOL WINAPI CreateProcessA_rep(LPCSTR lpApplicationName,
       for (char *pos = filePart; *pos != '\0'; ++pos) {
         *pos = tolower(*pos);
       }
-      if (processBlacklistA.find(filePart) != processBlacklistA.end()) {
+      if (processBlacklist.find(filePart) != processBlacklist.end()) {
         blacklisted = true;
       }
     }
@@ -230,51 +230,23 @@ BOOL WINAPI CreateProcessA_rep(LPCSTR lpApplicationName,
            lpApplicationName != NULL ? lpApplicationName : "null",
            lpCommandLine != NULL ? lpCommandLine : "null",
            lpCurrentDirectory != NULL ? lpCurrentDirectory : "null",
-           (blacklisted || compiler) ? "NOT hooking" : "hooking");
+           blacklisted ? "NOT hooking" : "hooking");
 
-  if ((lpApplicationName == NULL) && (lpCommandLine != NULL)) {
-    std::tr1::cmatch match;
-    try {
-      std::tr1::regex exp("\"Papyrus Compiler\\\\PapyrusCompiler.exe\" ([^ ]*) -f=\"([^\"]*)\" -i=\"([^\"]*)\" -o=\"(Data/Scripts/)\"");
-      if (std::tr1::regex_search(lpCommandLine, match, exp)) {
-        std::string fullInput = match[3];
-        fullInput.append(match[1]);
-        std::string reroutedInput = modInfo->getRerouteOpenExisting(fullInput.c_str());
-        size_t sPos = reroutedInput.find_last_of("\\/");
-        char tempBuffer[1024];
-        _snprintf(tempBuffer, 1024, "\"Papyrus Compiler\\PapyrusCompiler.exe\" %s -f=\"%s\" -i=\"%s\" -o=\"%s\"",
-                  match.str(1).c_str(), match.str(2).c_str(), reroutedInput.substr(0, sPos).c_str(), match.str(4).c_str());
-        LOGDEBUG("run papyrus: %s", tempBuffer);
-        if (!::CreateProcessA_reroute(lpApplicationName, tempBuffer, lpProcessAttributes,
-              lpThreadAttributes, bInheritHandles, flags, lpEnvironment,
-              lpCurrentDirectory, lpStartupInfo, lpProcessInformation)) {
-          return FALSE;
-        }
-        compiler = true;
-      }
-    } catch (const std::exception &e) {
-      Logger::Instance().error("failed to parse compiler command line: %s", e.what());
-      return FALSE;
-    }
+  std::string reroutedCwd;
+  if (lpCurrentDirectory != NULL) {
+    reroutedCwd = modInfo->getRerouteOpenExisting(lpCurrentDirectory);
   }
 
-  if (!compiler) {
-    std::string reroutedCwd;
-    if (lpCurrentDirectory != NULL) {
-      reroutedCwd = modInfo->getRerouteOpenExisting(lpCurrentDirectory);
-    }
-
-    if (!::CreateProcessA_reroute(lpApplicationName, lpCommandLine, lpProcessAttributes,
-          lpThreadAttributes, bInheritHandles, flags, lpEnvironment,
-          lpCurrentDirectory != NULL ? reroutedCwd.c_str() : NULL,
-          lpStartupInfo, lpProcessInformation)) {
-      LOGDEBUG("process failed to start (%lu)", ::GetLastError());
-      return FALSE;
-    }
+  if (!::CreateProcessA_reroute(lpApplicationName, lpCommandLine, lpProcessAttributes,
+        lpThreadAttributes, bInheritHandles, flags, lpEnvironment,
+        lpCurrentDirectory != NULL ? reroutedCwd.c_str() : NULL,
+        lpStartupInfo, lpProcessInformation)) {
+    LOGDEBUG("process failed to start (%lu)", ::GetLastError());
+    return FALSE;
   }
 
   try {
-    if (!compiler && !blacklisted) {
+    if (!blacklisted) {
       char hookPath[MAX_PATH];
       ::GetModuleFileNameA(dllModule, hookPath, MAX_PATH);
       injectDLL(lpProcessInformation->hProcess, lpProcessInformation->hThread,
@@ -316,7 +288,7 @@ BOOL WINAPI CreateProcessW_rep(LPCWSTR lpApplicationName,
       for (wchar_t *pos = filePart; *pos != L'\0'; ++pos) {
         *pos = tolower(*pos);
       }
-      if (processBlacklistW.find(filePart) != processBlacklistW.end()) {
+      if (processBlacklist.find(ToString(filePart, true)) != processBlacklist.end()) {
         blacklisted = true;
       }
     }
@@ -616,9 +588,10 @@ HANDLE WINAPI FindFirstFileExW_rep(LPCWSTR lpFileName,
   } else if ((sPos = wcswcs(lpFileName, AppConfig::localSavePlaceholder())) != NULL) {
     rerouteFilename = modInfo->getProfilePath().append(L"\\saves\\").append(sPos + wcslen(AppConfig::localSavePlaceholder()));
   }
-  HANDLE result = modInfo->findStart(rerouteFilename.c_str(), fInfoLevelId, lpFindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags);
+  bool rerouted = false;
+  HANDLE result = modInfo->findStart(rerouteFilename.c_str(), fInfoLevelId, lpFindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags, &rerouted);
 
-  if (result != INVALID_HANDLE_VALUE) {
+  if ((result != INVALID_HANDLE_VALUE) && rerouted) {
     LOGDEBUG("findfirstfileex %ls: %ls (%x)", rerouteFilename.c_str(),
              ((LPWIN32_FIND_DATAW)lpFindFileData)->cFileName,
              ((LPWIN32_FIND_DATAW)lpFindFileData)->dwFileAttributes);
@@ -1240,7 +1213,9 @@ DWORD WINAPI GetPrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LP
     }
   }
 
-  if ((archiveListHookState == HOOK_NOTYET) && (lpKeyName[0] ==  's') && (_stricmp(lpAppName, "Archive") == 0)) {
+  if ((archiveListHookState == HOOK_NOTYET)
+      && (lpKeyName != NULL) && (lpKeyName[0] == 's')
+      && (_stricmp(lpAppName, "Archive") == 0)) {
     // if we don't reach the success-case, we can safely assume it failed
     archiveListHookState = HOOK_FAILED;
     DWORD start, end;
@@ -1262,7 +1237,8 @@ DWORD WINAPI GetPrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LP
     }
   }
 
-  if ((_stricmp(lpKeyName, "sResourceArchiveList") == 0) || (_stricmp(lpKeyName, "sArchiveList") == 0)) {
+  if ((lpKeyName != NULL)
+      && ((_stricmp(lpKeyName, "sResourceArchiveList") == 0) || (_stricmp(lpKeyName, "sArchiveList") == 0))) {
     size_t length = std::min<DWORD>(bsaResourceList.size(), nSize - 1);
     if ((length > 255) && (lpReturnedString != s_Buffer)) {
       LOGDEBUG("safety check: length exceeds regular size but wrong buffer (%p vs. %p)?", lpReturnedString, s_Buffer);
@@ -1271,7 +1247,7 @@ DWORD WINAPI GetPrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LP
     strncpy(lpReturnedString, bsaResourceList.c_str(), length);
     lpReturnedString[length] = '\0';
     return static_cast<DWORD>(length);
-  } else if (_stricmp(lpKeyName, "sResourceArchiveList2") == 0) {
+  } else if ((lpKeyName != NULL) && (_stricmp(lpKeyName, "sResourceArchiveList2") == 0)) {
     // don't use second resource list at all
     lpReturnedString[0] = '\0';
     return 0;
@@ -1286,7 +1262,7 @@ DWORD WINAPI GetPrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LP
 
       res = GetPrivateProfileStringA_reroute(lpAppName, lpKeyName, lpDefault,
                                              temp.get(), nSize, rerouteFilename.c_str());
-    } else {
+    } else if (lpKeyName != NULL) {
       tweakedIniValues[ToWString(lpKeyName, false)] = ToWString(temp.get(), false);
     }
 
@@ -1308,7 +1284,7 @@ DWORD WINAPI GetPrivateProfileStringW_rep(LPCWSTR lpAppName, LPCWSTR lpKeyName, 
     if (wcscmp(lpReturnedString, L"DUMMY_VALUE") == 0) {
       std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
       res = GetPrivateProfileStringW_reroute(lpAppName, lpKeyName, lpDefault, lpReturnedString, nSize, rerouteFilename.c_str());
-    } else {
+    } else if (lpKeyName != NULL) {
       tweakedIniValues[lpKeyName] = lpReturnedString;
     }
     return res;
@@ -1410,11 +1386,11 @@ UINT WINAPI GetPrivateProfileIntA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, INT nD
     UINT res = GetPrivateProfileIntA_reroute(lpAppName, lpKeyName, INT_MAX, modInfo->getTweakedIniA().c_str());
     if (res == INT_MAX) {
       std::string rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
-      return GetPrivateProfileIntA_reroute(lpAppName, lpKeyName, nDefault, rerouteFilename.c_str());
-    } else {
+      res = GetPrivateProfileIntA_reroute(lpAppName, lpKeyName, nDefault, rerouteFilename.c_str());
+    } else if (lpKeyName != NULL) {
       tweakedIniValues[ToWString(lpKeyName, false)] = std::to_wstring(static_cast<unsigned long long>(res));
-      return res;
     }
+    return res;
   } else {
     return GetPrivateProfileIntA_reroute(lpAppName, lpKeyName, nDefault, lpFileName);
   }
@@ -1431,11 +1407,11 @@ UINT WINAPI GetPrivateProfileIntW_rep(LPCWSTR lpAppName, LPCWSTR lpKeyName, INT 
     UINT res = GetPrivateProfileIntW_reroute(lpAppName, lpKeyName, INT_MAX, modInfo->getTweakedIniW().c_str());
     if (res == INT_MAX) {
       std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
-      return GetPrivateProfileIntW_reroute(lpAppName, lpKeyName, nDefault, rerouteFilename.c_str());
-    } else {
+      res = GetPrivateProfileIntW_reroute(lpAppName, lpKeyName, nDefault, rerouteFilename.c_str());
+    } else if (lpKeyName != NULL) {
       tweakedIniValues[lpKeyName] = std::to_wstring(static_cast<unsigned long long>(res));
-      return res;
     }
+    return res;
   } else {
     return GetPrivateProfileIntW_reroute(lpAppName, lpKeyName, nDefault, lpFileName);
   }
@@ -1512,7 +1488,7 @@ BOOL WINAPI WritePrivateProfileSectionW_rep(LPCWSTR lpAppName, LPCWSTR lpString,
 BOOL WINAPI WritePrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LPCSTR lpString, LPCSTR lpFileName)
 {
   PROFILE();
-  // lpKeyName is in fact allowed to be null, in which cast this function has entirely different semantics
+  // lpKeyName is in fact allowed to be null, in which case this function has entirely different semantics
   if (lpKeyName != NULL) {
     std::wstring keyW = ToWString(lpKeyName, false);
     if (tweakedIniValues.find(keyW) != tweakedIniValues.end()) {
@@ -2587,14 +2563,17 @@ BOOL SetUpBSAMap()
 
 void SetUpBlacklist()
 {
-  // processes we never want to hook. lower-case characters only!
-  {
-    std::list<std::string> temp = boost::assign::list_of("steam.exe")("chrome.exe")("firefox.exe");
-    processBlacklistA = std::set<std::string>(temp.begin(), temp.end());
-  }
-  {
-    std::list<std::wstring> temp = boost::assign::list_of(L"steam.exe")(L"chrome.exe")(L"firefox.exe");
-    processBlacklistW = std::set<std::wstring>(temp.begin(), temp.end());
+  std::ifstream blacklistFile(ToString(moPath, false) + "\\process_blacklist.txt", std::ifstream::in);
+  if (blacklistFile.is_open()) {
+    char buffer[MAX_PATH];
+    while (blacklistFile.getline(buffer, MAX_PATH)) {
+      processBlacklist.insert(ToLower(buffer));
+    }
+
+    blacklistFile.close();
+  } else {
+    std::list<std::string> temp = { "steam.exe", "chrome.exe", "firefox.exe" };
+    processBlacklist = std::set<std::string>(temp.begin(), temp.end());
   }
 }
 
@@ -2711,26 +2690,29 @@ BOOL Init(int logLevel, const wchar_t *profileName)
     return TRUE;
   }
 
-  wchar_t moPath[MAX_PATH_UNICODE];
-  ::GetModuleFileNameW(dllModule, moPath, MAX_PATH_UNICODE);
-  wchar_t *temp = wcsrchr(moPath, L'\\');
-  if (temp != NULL) {
-    *temp = L'\0';
-  } else {
-    MessageBox(NULL, TEXT("failed to determine mo path"), TEXT("initialisation failed"), MB_OK);
-    return TRUE;
-  }
-
+  wchar_t pathBuffer[MAX_PATH_UNICODE];
   {
-    // if a file called mo_path exists in the same directory as the dll, it overrides the
-    // path to the mod organizer
-    std::string hintFileName = ToString(moPath, false);
-    hintFileName.append("\\mo_path.txt");
-    std::wifstream hintFile(hintFileName.c_str(), std::ifstream::in);
-    if (hintFile.is_open()) {
-      hintFile.getline(moPath, MAX_PATH_UNICODE);
-      hintFile.close();
+    ::GetModuleFileNameW(dllModule, pathBuffer, MAX_PATH_UNICODE);
+    wchar_t *temp = wcsrchr(pathBuffer, L'\\');
+    if (temp != NULL) {
+      *temp = L'\0';
+    } else {
+      MessageBox(NULL, TEXT("failed to determine mo path"), TEXT("initialisation failed"), MB_OK);
+      return TRUE;
     }
+
+    {
+      // if a file called mo_path exists in the same directory as the dll, it overrides the
+      // path to the mod organizer
+      std::string hintFileName = ToString(pathBuffer, false);
+      hintFileName.append("\\mo_path.txt");
+      std::wifstream hintFile(hintFileName.c_str(), std::ifstream::in);
+      if (hintFile.is_open()) {
+        hintFile.getline(pathBuffer, MAX_PATH_UNICODE);
+        hintFile.close();
+      }
+    }
+    moPath = pathBuffer;
   }
 
   std::wstring moDataPath;
@@ -2786,8 +2768,8 @@ BOOL Init(int logLevel, const wchar_t *profileName)
   ::GetVersionEx((OSVERSIONINFO*)&versionInfo);
   winXP = (versionInfo.dwMajorVersion == 5) && (versionInfo.dwMinorVersion == 1);
   Logger::Instance().info("Windows %d.%d (%s)", versionInfo.dwMajorVersion, versionInfo.dwMinorVersion, versionInfo.wProductType == VER_NT_WORKSTATION ? "workstation" : "server");
-  ::GetModuleFileNameW(dllModule, moPath, MAX_PATH_UNICODE);
-  VS_FIXEDFILEINFO version = GetFileVersion(moPath);
+  ::GetModuleFileNameW(dllModule, pathBuffer, MAX_PATH_UNICODE);
+  VS_FIXEDFILEINFO version = GetFileVersion(pathBuffer);
   Logger::Instance().info("hook.dll v%d.%d.%d",
                           version.dwFileVersionMS >> 16,
                           version.dwFileVersionMS & 0xFFFF,
