@@ -269,7 +269,7 @@ bool ModInfo::detectOverwriteChange()
       FilesOrigin &origin = m_DirectoryStructure.getOriginByID(originId);
       time_t before = time(NULL);
       {
-        HookLock lock; // addFromOrigin uses FindFirstFileEx, rerouting that could be disastrous
+        HookLock lock(0xFFFFFFFF); // addFromOrigin uses FindFirstFileEx, rerouting that could be disastrous
         m_DirectoryStructure.addFromOrigin(origin.getName(), origin.getPath(), origin.getPriority());
       }
       origin.enable(false, before);
@@ -753,9 +753,9 @@ BOOL ModInfo::findNext(HANDLE handle, LPWIN32_FIND_DATAW findFileData)
 
 BOOL ModInfo::findClose(HANDLE handle)
 {
-  SearchesMap::iterator Iter = m_Searches.find(handle);
-  if (Iter != m_Searches.end()) {
-    m_Searches.erase(Iter);
+  SearchesMap::iterator iter = m_Searches.find(handle);
+  if (iter != m_Searches.end()) {
+    m_Searches.erase(iter);
   }
 
   return FindClose_reroute(handle);

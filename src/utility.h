@@ -37,6 +37,6 @@ LPCSTR GetBaseName(LPCSTR string);
 LPCWSTR GetBaseName(LPCWSTR string);
 LPWSTR GetBaseName(LPWSTR string);
 
-void Canonicalize(LPWSTR destination, LPCWSTR source);
+void Canonicalize(LPWSTR destination, LPCWSTR source, size_t bufferSize = MAX_PATH);
 
 const wchar_t *wcsrpbrk(const wchar_t *string, const wchar_t *control);
