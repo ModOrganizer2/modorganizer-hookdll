@@ -426,7 +426,6 @@ void ModInfo::loadDeleters(const std::string &listFileName)
 }
 
 
-
 void ModInfo::addModFile(const std::wstring &fileName)
 {
   if (StartsWith(fileName.c_str(), m_ModsPath.c_str())) {
@@ -685,7 +684,8 @@ HANDLE ModInfo::findStart(LPCWSTR lpFileName,
                           LPVOID lpFindFileData,
                           FINDEX_SEARCH_OPS fSearchOp,
                           LPVOID lpSearchFilter,
-                          DWORD dwAdditionalFlags)
+                          DWORD dwAdditionalFlags,
+                          bool *rerouted)
 {
   WCHAR temp[MAX_PATH];
   getFullPathName(lpFileName, temp, MAX_PATH);
@@ -693,6 +693,7 @@ HANDLE ModInfo::findStart(LPCWSTR lpFileName,
   if (StartsWith(temp, m_DataPathAbsoluteW.c_str())) {
     file = m_DirectoryStructure.searchFile(temp + m_DataPathAbsoluteW.length() + 1, NULL);
   }
+  if (rerouted != NULL) *rerouted = false;
   if (file.get() != NULL) {
     // early out if the pattern is a single file because we can find it in-memory
     return FindFirstFileExW_reroute(file->getFullPath().c_str(), fInfoLevelId, lpFindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags);
@@ -708,6 +709,7 @@ HANDLE ModInfo::findStart(LPCWSTR lpFileName,
     if ((StartsWith(absoluteFileName, m_DataPathAbsoluteW.c_str())) &&
         ((absoluteFileName[m_DataPathAbsoluteW.length()] == '\\') ||
          (absoluteFileName[m_DataPathAbsoluteW.length()] == '/'))) {
+      if (rerouted != NULL) *rerouted = true;
       filenameOffset = m_DataPathAbsoluteW.length();
     } else {
       *reinterpret_cast<LPWIN32_FIND_DATAW>(lpFindFileData) = tempData;

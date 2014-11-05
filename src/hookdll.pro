@@ -86,8 +86,12 @@ QMAKE_CFLAGS_WARN_ON += -W4
 
 #QMAKE_CXXFLAGS += -GS -RTCs
 
+BASEDIR = $$PWD
+BASEDIR ~= s,/,$$QMAKE_DIR_SEP,g
+
 LIBS += -lmo_shared -lkernel32 -luser32 -lshell32 -ladvapi32 -lshlwapi -lVersion -lbsatk
 LIBS += -L"$${ZLIBPATH}/build" -lzlibstatic -L"$${BOOSTPATH}/stage/lib"
 
 QMAKE_POST_LINK += xcopy /y /I $$quote($$SRCDIR\\hook*.dll) $$quote($$DSTDIR) $$escape_expand(\\n)
 QMAKE_POST_LINK += xcopy /y /I $$quote($$SRCDIR\\hook*.pdb) $$quote($$DSTDIR) $$escape_expand(\\n)
+QMAKE_POST_LINK += xcopy /y /I $$quote($$BASEDIR\\process_blacklist*.txt) $$quote($$DSTDIR) $$escape_expand(\\n)
