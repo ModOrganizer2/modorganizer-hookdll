@@ -586,9 +586,10 @@ HANDLE WINAPI FindFirstFileExW_rep(LPCWSTR lpFileName,
   } else if ((sPos = wcswcs(lpFileName, AppConfig::localSavePlaceholder())) != NULL) {
     rerouteFilename = modInfo->getProfilePath() + L"\\saves\\" + (sPos + wcslen(AppConfig::localSavePlaceholder()));
   }
-  HANDLE result = modInfo->findStart(rerouteFilename.c_str(), fInfoLevelId, lpFindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags);
+  bool rerouted = false;
+  HANDLE result = modInfo->findStart(rerouteFilename.c_str(), fInfoLevelId, lpFindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags, &rerouted);
 
-  if (result != INVALID_HANDLE_VALUE) {
+  if ((result != INVALID_HANDLE_VALUE) && rerouted) {
     LOGDEBUG("findfirstfileex %ls: %ls (%x)", rerouteFilename.c_str(),
              ((LPWIN32_FIND_DATAW)lpFindFileData)->cFileName,
              ((LPWIN32_FIND_DATAW)lpFindFileData)->dwFileAttributes);
@@ -714,24 +715,9 @@ BOOL WINAPI MoveFileExW_rep(LPCWSTR lpExistingFileName, LPCWSTR lpNewFileName, D
   std::wstring destinationReroute = fullDestinationName;
 
   if (StartsWith(fullDestinationName, modInfo->getDataPathW().c_str())) {
-    destinationReroute = modInfo->getRemovedLocation(fullDestinationName);
-
-    // usually, always move to the overwrite directory. However, in the "create tmp, remove original, move tmp to original"-sequence
-    // we'd rather have the modified file in the original location. If the source file was part of a mod we leave the file in that
-    // mod
     std::wostringstream temp;
-    if (!destinationReroute.empty()) {
-      // In the "create tmp, remove original, move tmp to original"-sequence we'd rather have the modified file in the original location.
-    } else if (rerouted && (originID != -1)) {
-      // source file is rerouted, destination file would be in data. use the same directory instead
-      FilesOrigin origin = modInfo->getFilesOrigin(originID);
-      temp << origin.getPath() << "\\" << (fullDestinationName + modInfo->getDataPathW().length() + 1);
-      destinationReroute = temp.str();
-    } else {
-      // default case - reroute to overwrite
-      temp << GameInfo::instance().getOverwriteDir() << "\\" << (fullDestinationName + modInfo->getDataPathW().length() + 1);
-      destinationReroute = temp.str();
-    }
+    temp << GameInfo::instance().getOverwriteDir() << "\\" << (fullDestinationName + modInfo->getDataPathW().length() + 1);
+    destinationReroute = temp.str();
   }
 
   { // create intermediate directories
@@ -1808,7 +1794,6 @@ int STDAPICALLTYPE SHFileOperationA_rep(LPSHFILEOPSTRUCTA lpFileOp)
           modInfo->addOverwriteFile(ToWString(rerouteFilename, false));
         }
       }
-
       newTo.insert(newTo.end(), rerouteFilename.begin(), rerouteFilename.end());
       newTo.push_back('\0');
       pos += strlen(pos) + 1;
@@ -2580,7 +2565,7 @@ void SetUpBlacklist()
 
     blacklistFile.close();
   } else {
-    std::list<std::string> temp = { "steam.exe", "chrome.exe", "firefox.exe" };
+    std::list<std::string> temp = boost::assign::list_of("steam.exe")("chrome.exe")("firefox.exe");
     processBlacklist = std::set<std::string>(temp.begin(), temp.end());
   }
 }
@@ -2644,6 +2629,9 @@ void writeMiniDump(PEXCEPTION_POINTERS exceptionPtrs)
   }
 }
 
+
+std::set<HANDLE> previousHits;
+
 LONG WINAPI VEHandler(PEXCEPTION_POINTERS exceptionPtrs)
 {
   DWORD start, end;
@@ -2652,10 +2640,18 @@ LONG WINAPI VEHandler(PEXCEPTION_POINTERS exceptionPtrs)
   if (((DWORD)exceptionPtrs->ExceptionRecord->ExceptionAddress < start) ||
       ((DWORD)exceptionPtrs->ExceptionRecord->ExceptionAddress > end)) {
     // origin isn't the hook-dll
-    if (exceptionPtrs->ExceptionRecord->ExceptionCode == 0xC0000005) {
+    if (
+        (exceptionPtrs->ExceptionRecord->ExceptionCode >= 0x80000000)     // only "warnings"
+        && (exceptionPtrs->ExceptionRecord->ExceptionCode != 0xe06d7363)  // C++ exception, may be handled in code
+        && (previousHits.find(exceptionPtrs->ExceptionRecord->ExceptionAddress) == previousHits.end())
+        ) {
       std::wstring modName = GetSectionName(exceptionPtrs->ExceptionRecord->ExceptionAddress);
-      Logger::Instance().info("Windows Exception (%x). Origin: \"%ls\". Last hooked call: %s",
-                              exceptionPtrs->ExceptionRecord->ExceptionCode, modName.c_str(), s_LastFunction);
+      Logger::Instance().info("Windows Exception (%x). Origin: \"%ls\" (%x). Last hooked call: %s",
+                              exceptionPtrs->ExceptionRecord->ExceptionCode,
+                              modName.c_str(),
+                              exceptionPtrs->ExceptionRecord->ExceptionAddress,
+                              s_LastFunction);
+      previousHits.insert(exceptionPtrs->ExceptionRecord->ExceptionAddress);
     }
     return EXCEPTION_CONTINUE_SEARCH;
   } else {
@@ -2731,30 +2727,9 @@ BOOL Init(int logLevel, const wchar_t *profileName)
     moPath = pathBuffer;
   }
 
-  std::wstring moDataPath;
-  {
-    std::wifstream instanceFile(ToString(moPath, false) + "\\INSTANCE");
-    if (instanceFile.is_open()) {
-      wchar_t buffer[MAX_PATH_UNICODE];
-      instanceFile.getline(buffer, MAX_PATH_UNICODE);
-      instanceFile.close();
-      moDataPath = buffer;
-    }
-
-    if (moDataPath.length() == 0) {
-      moDataPath = moPath;
-    } else {
-      wchar_t appDataPath[MAX_PATH];
-      if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA, NULL, SHGFP_TYPE_CURRENT, appDataPath))) {
-        moDataPath = std::wstring(appDataPath) + L"\\ModOrganizer\\" + moDataPath;
-      }
-    }
-  }
-
-  // initialised once we know where mo is installed
   std::wostringstream iniName;
   try {
-    iniName << moDataPath << "\\modorganizer.ini";
+    iniName << moPath << "\\modorganizer.ini";
 
     wchar_t pathTemp[MAX_PATH];
     wchar_t gamePath[MAX_PATH];
