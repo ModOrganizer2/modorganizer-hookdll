@@ -286,7 +286,7 @@ std::wstring ModInfo::reverseReroute(const std::wstring &path, bool *rerouted)
 {
   std::wstring result;
   wchar_t temp[MAX_PATH];
-  Canonicalize(temp, path.c_str());
+  Canonicalize(temp, path.c_str(), MAX_PATH);
   std::wstring overwriteDir = GameInfo::instance().getOverwriteDir();
   if (StartsWith(temp, m_ModsPath.c_str())) {
     wchar_t *relPath = temp + m_ModsPath.length();
@@ -807,7 +807,7 @@ void ModInfo::getFullPathName(LPCWSTR originalName, LPWSTR targetBuffer, size_t 
     ::GetFullPathNameW_reroute(originalName, static_cast<DWORD>(bufferLength), temp, NULL);
   }
   checkPathAlternative(temp);
-  Canonicalize(targetBuffer, temp);
+  Canonicalize(targetBuffer, temp, bufferLength);
 }
 
 
