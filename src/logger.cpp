@@ -32,12 +32,12 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 using namespace MOShared;
 
 
-Logger* Logger::s_Instance = NULL;
+Logger* Logger::s_Instance = nullptr;
 
 
 Logger& Logger::Instance()
 {
-  if (s_Instance == NULL) {
+  if (s_Instance == nullptr) {
     s_Instance = new Logger(TEXT("modorganizer.log"), LEVEL_DEBUG);
   }
 
@@ -48,7 +48,7 @@ Logger& Logger::Instance()
 void Logger::Init(LPCTSTR basePath, int logLevel)
 {
   static Logger instance(basePath, logLevel);
-  if (s_Instance == NULL) {
+  if (s_Instance == nullptr) {
     s_Instance = &instance;
   }
 }
@@ -62,7 +62,7 @@ Logger::Logger(LPCTSTR logPath, int logLevel)
   int counter = 0;
   while (m_LogFile == INVALID_HANDLE_VALUE) {
     m_LogFile = ::CreateFile(m_LogPath.c_str(),
-          FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+          FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (m_LogFile == INVALID_HANDLE_VALUE) {
       m_LogPath = findNameVariant(logPath, counter);
     }
@@ -73,7 +73,7 @@ Logger::Logger(LPCTSTR logPath, int logLevel)
   } else {
     DWORD sizeWritten = 0;
     static const char Header[] = "-------------------------------\r\n";
-    ::WriteFile(m_LogFile, Header, strlen(Header), &sizeWritten, NULL);
+    ::WriteFile(m_LogFile, Header, strlen(Header), &sizeWritten, nullptr);
   }
 }
 
@@ -81,12 +81,12 @@ Logger::~Logger()
 {
   DWORD sizeWritten = 0;
   static const char Footer[] = "----------- LOG END -----------\r\n";
-  ::WriteFile(m_LogFile, Footer, strlen(Footer), &sizeWritten, NULL);
+  ::WriteFile(m_LogFile, Footer, strlen(Footer), &sizeWritten, nullptr);
   ::FlushFileBuffers(m_LogFile);
   ::CloseHandle(m_LogFile);
 
   wrapUpLog();
-  s_Instance = NULL;
+  s_Instance = nullptr;
 }
 
 
@@ -101,11 +101,11 @@ std::basic_string<TCHAR> Logger::findNameVariant(const std::basic_string<TCHAR> 
 void Logger::wrapUpLog()
 {
   HANDLE testHandle = CreateFileW_reroute(m_LogPath.c_str(),
-                                   FILE_APPEND_DATA, 0, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+                                   FILE_APPEND_DATA, 0, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
   if (testHandle != INVALID_HANDLE_VALUE) {
     // file opened exclusively so we're probably the last process accessing it.
     FILETIME fileTime;
-    ::GetFileTime(testHandle, &fileTime, NULL, NULL);
+    ::GetFileTime(testHandle, &fileTime, nullptr, nullptr);
     SYSTEMTIME time;
     FileTimeToSystemTime(&fileTime, &time);
     TCHAR localDate[255];
@@ -191,7 +191,7 @@ void Logger::log(const char* prefix, const char* format, va_list argList)
 
   if (m_LogFile != INVALID_HANDLE_VALUE) {
     DWORD sizeWritten = 0;
-    ::WriteFile(m_LogFile, buffer2, len, &sizeWritten, NULL);
+    ::WriteFile(m_LogFile, buffer2, len, &sizeWritten, nullptr);
   }
 }
 

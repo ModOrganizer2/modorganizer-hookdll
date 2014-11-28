@@ -49,7 +49,7 @@ public:
 public:
   static Logger& Instance();
   static void Init(LPCTSTR basePath, int logLevel);
-  static bool IsInitialised() { return s_Instance != NULL; }
+  static bool IsInitialised() { return s_Instance != nullptr; }
   ~Logger();
 
   void debug(const char* format, ...);

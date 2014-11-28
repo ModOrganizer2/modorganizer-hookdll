@@ -53,7 +53,7 @@ bool FileExists_reroute(const std::wstring &filename)
   ZeroMemory(&findData, sizeof(WIN32_FIND_DATAW));
 
   HANDLE search = INVALID_HANDLE_VALUE;
-  search = FindFirstFileExW_reroute(filename.c_str(), FindExInfoStandard, &findData, FindExSearchNameMatch, NULL, 0);
+  search = FindFirstFileExW_reroute(filename.c_str(), FindExInfoStandard, &findData, FindExSearchNameMatch, nullptr, 0);
 
   if (search == INVALID_HANDLE_VALUE) {
     return false;
@@ -68,7 +68,7 @@ typedef DWORD (WINAPI *GetFinalPathNameByHandleW_type)(HANDLE, LPCWSTR, DWORD, D
 
 
 ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirectory, bool enableHiding)
-  : m_ProfileName(profileName), m_ModsPath(modDirectory), m_CurrentDirectory(), m_DirectoryStructure(L"data", NULL, 0), m_ModCount(0),
+  : m_ProfileName(profileName), m_ModsPath(modDirectory), m_CurrentDirectory(), m_DirectoryStructure(L"data", nullptr, 0), m_ModCount(0),
     m_SavesReroute(false)
 
 {
@@ -95,7 +95,7 @@ ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirecto
   m_DataPathAbsoluteA = ToString(m_DataPathAbsoluteW, false);
   Logger::Instance().info("data path is %ls", m_DataPathAbsoluteW.c_str());
   HANDLE dataDir = ::CreateFileW(m_DataPathAbsoluteW.c_str(), GENERIC_READ, FILE_SHARE_READ,
-                                 NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+                                 nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
   if (dataDir == INVALID_HANDLE_VALUE) {
     LOGDEBUG("invalid handle: %d - %ls", ::GetLastError(), m_DataPathAbsoluteW.c_str());
   }
@@ -106,7 +106,7 @@ ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirecto
 
     HMODULE kernel32Handle = ::GetModuleHandle(TEXT("kernel32.dll"));
     GetFinalPathNameByHandleW_type getFinalPathNameByHandleW = (GetFinalPathNameByHandleW_type)::GetProcAddress(kernel32Handle, "GetFinalPathNameByHandleW");
-    if (getFinalPathNameByHandleW != NULL) {
+    if (getFinalPathNameByHandleW != nullptr) {
       // vista and up, handle junction points
       DWORD res = getFinalPathNameByHandleW(dataDir, buffer, MAX_PATH, VOLUME_NAME_DOS);
       if (res != 0) {
@@ -170,7 +170,7 @@ ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirecto
   file.close();
   int index = 1;
 
-  time_t start = time(NULL);
+  time_t start = time(nullptr);
 
   m_DirectoryStructure.addFromOrigin(L"data", GameInfo::instance().getGameDirectory() + L"\\data", 0);
 
@@ -215,7 +215,7 @@ ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirecto
   LOGDEBUG("indexing overwrite");
   m_DirectoryStructure.addFromOrigin(L"overwrite", GameInfo::instance().getOverwriteDir(), index);
 
-  LOGDEBUG("update vfs took %ld seconds", time(NULL) - start);
+  LOGDEBUG("update vfs took %ld seconds", time(nullptr) - start);
 
   m_DataOrigin = m_DirectoryStructure.getOriginByName(L"data").getID();
 
@@ -267,7 +267,7 @@ bool ModInfo::detectOverwriteChange()
     int originId = m_UpdateOriginIDs[*iter];
     try {
       FilesOrigin &origin = m_DirectoryStructure.getOriginByID(originId);
-      time_t before = time(NULL);
+      time_t before = time(nullptr);
       {
         HookLock lock(0xFFFFFFFF); // addFromOrigin uses FindFirstFileEx, rerouting that could be disastrous
         m_DirectoryStructure.addFromOrigin(origin.getName(), origin.getPath(), origin.getPriority());
@@ -294,24 +294,24 @@ std::wstring ModInfo::reverseReroute(const std::wstring &path, bool *rerouted)
     // skip the mod name
     relPath = wcschr(relPath, L'\\');
 
-    if (relPath != NULL) {
+    if (relPath != nullptr) {
       Canonicalize(temp, (m_DataPathAbsoluteW + relPath).c_str());
       result.assign(temp);
     } else {
       result = m_DataPathAbsoluteW;
     }
 
-    if (rerouted != NULL) *rerouted = true;
+    if (rerouted != nullptr) *rerouted = true;
   } else if (StartsWith(temp, overwriteDir.c_str())) {
     wchar_t *relPath = temp + overwriteDir.length();
     if (*relPath != L'\0') relPath += 1;
     Canonicalize(temp, (m_DataPathAbsoluteW + L"\\" + relPath).c_str());
     result.assign(temp);
 
-    if (rerouted != NULL) *rerouted = true;
+    if (rerouted != nullptr) *rerouted = true;
   } else {
     result.assign(temp);
-    if (rerouted != NULL) *rerouted = false;
+    if (rerouted != nullptr) *rerouted = false;
   }
   return result;
 }
@@ -421,7 +421,7 @@ void ModInfo::loadDeleters(const std::string &listFileName)
 #endif
     m_HiddenFiles.insert(fileName);
 
-    m_DirectoryStructure.removeFile(fileName, NULL);
+    m_DirectoryStructure.removeFile(fileName, nullptr);
   }
 }
 
@@ -469,7 +469,7 @@ void ModInfo::addModFile(LPCWSTR originName, const std::wstring &fileName)
 
 void ModInfo::addRemoval(const std::wstring &fileName, int origin)
 {
-  time_t now = time(NULL);
+  time_t now = time(nullptr);
   // first, remove outdated entries
   for (std::list<RemovalInfo>::const_iterator iter = m_RemovalInfo.begin(); iter != m_RemovalInfo.end();) {
     if (iter->time + 5 < now) {
@@ -488,7 +488,7 @@ void ModInfo::addRemoval(const std::wstring &fileName, int origin)
 
 std::wstring ModInfo::getRemovedLocation(const std::wstring &fileName)
 {
-  time_t now = time(NULL);
+  time_t now = time(nullptr);
   for (std::list<RemovalInfo>::const_iterator iter = m_RemovalInfo.begin(); iter != m_RemovalInfo.end();) {
     if (iter->time + 5 < now) {
       iter = m_RemovalInfo.erase(iter);
@@ -590,12 +590,12 @@ HANDLE ModInfo::dataSearch(LPCWSTR absoluteFileName,
 {
   // path component relative to the data directory
   const wchar_t* slashPos = wcsrchr(absoluteFileName, L'\\');
-  if (slashPos == NULL) {
+  if (slashPos == nullptr) {
     slashPos = wcsrchr(absoluteFileName, L'/');
   }
   WCHAR relativePath[MAX_PATH];
 
-  if (slashPos != NULL) {
+  if (slashPos != nullptr) {
     size_t length = std::min<size_t>(static_cast<size_t>(slashPos - absoluteFileName - filenameOffset), MAX_PATH);
     if (length > 0) {
       wcsncpy(relativePath, absoluteFileName + filenameOffset, length);
@@ -615,7 +615,7 @@ HANDLE ModInfo::dataSearch(LPCWSTR absoluteFileName,
     addSearchResults(searchBuffer, primaryHandle, dataHandle, relativePath, searchData);
   }
 
-  const DirectoryEntry *searchDirectory = NULL;
+  const DirectoryEntry *searchDirectory = nullptr;
   if (relativePath[0] != '\0') {
     // micro-optimization: don't search if the parent directory doesn't even exist in the mod
     std::wstring parentDir(relativePath + 1);
@@ -631,7 +631,7 @@ HANDLE ModInfo::dataSearch(LPCWSTR absoluteFileName,
     std::wostringstream fullPath;
     fullPath << m_ModsPath << "\\" << *iter << (absoluteFileName + filenameOffset);
     if ((relativePath[0] != '\0') &&
-        ((searchDirectory == NULL) ||
+        ((searchDirectory == nullptr) ||
          !searchDirectory->hasContentsFromOrigin(m_DirectoryStructure.getOriginByName(*iter).getID()))) {
       continue;
     }
@@ -691,10 +691,10 @@ HANDLE ModInfo::findStart(LPCWSTR lpFileName,
   getFullPathName(lpFileName, temp, MAX_PATH);
   FileEntry::Ptr file;
   if (StartsWith(temp, m_DataPathAbsoluteW.c_str())) {
-    file = m_DirectoryStructure.searchFile(temp + m_DataPathAbsoluteW.length() + 1, NULL);
+    file = m_DirectoryStructure.searchFile(temp + m_DataPathAbsoluteW.length() + 1, nullptr);
   }
-  if (rerouted != NULL) *rerouted = false;
-  if (file.get() != NULL) {
+  if (rerouted != nullptr) *rerouted = false;
+  if (file.get() != nullptr) {
     // early out if the pattern is a single file because we can find it in-memory
     return FindFirstFileExW_reroute(file->getFullPath().c_str(), fInfoLevelId, lpFindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags);
   } else {
@@ -709,7 +709,7 @@ HANDLE ModInfo::findStart(LPCWSTR lpFileName,
     if ((StartsWith(absoluteFileName, m_DataPathAbsoluteW.c_str())) &&
         ((absoluteFileName[m_DataPathAbsoluteW.length()] == '\\') ||
          (absoluteFileName[m_DataPathAbsoluteW.length()] == '/'))) {
-      if (rerouted != NULL) *rerouted = true;
+      if (rerouted != nullptr) *rerouted = true;
       filenameOffset = m_DataPathAbsoluteW.length();
     } else {
       *reinterpret_cast<LPWIN32_FIND_DATAW>(lpFindFileData) = tempData;
@@ -804,7 +804,7 @@ void ModInfo::getFullPathName(LPCWSTR originalName, LPWSTR targetBuffer, size_t 
       ::PathCombineW(temp, m_CurrentDirectory.c_str(), originalName);
     }
   } else {
-    ::GetFullPathNameW_reroute(originalName, static_cast<DWORD>(bufferLength), temp, NULL);
+    ::GetFullPathNameW_reroute(originalName, static_cast<DWORD>(bufferLength), temp, nullptr);
   }
   checkPathAlternative(temp);
   Canonicalize(targetBuffer, temp);
@@ -815,7 +815,7 @@ std::wstring ModInfo::getRerouteOpenExisting(LPCWSTR originalName, bool preferOr
 {
   PROFILE_S();
 
-  if (rerouted != NULL) {
+  if (rerouted != nullptr) {
     *rerouted = false;
   }
 
@@ -828,25 +828,25 @@ std::wstring ModInfo::getRerouteOpenExisting(LPCWSTR originalName, bool preferOr
 
   std::wstring result;
   LPCWSTR baseName = GetBaseName(temp);
-  LPCWSTR sPos = NULL;
+  LPCWSTR sPos = nullptr;
   if (GameInfo::instance().rerouteToProfile(baseName, originalName)) {
     result = m_ProfilePath + L"\\" + baseName;
-    if (rerouted != NULL) {
+    if (rerouted != nullptr) {
       *rerouted = true;
     }
-  } else if ((sPos = wcswcs(temp, AppConfig::localSavePlaceholder())) != NULL) {
+  } else if ((sPos = wcswcs(temp, AppConfig::localSavePlaceholder())) != nullptr) {
     m_SavesReroute = true;
     result = m_ProfilePath + L"\\saves\\" + (sPos + wcslen(AppConfig::localSavePlaceholder()));
-    if (rerouted != NULL) {
+    if (rerouted != nullptr) {
       *rerouted = true;
     }
   } else if (m_SavesReroute
              && (EndsWith(temp, L".skse")
                  || EndsWith(temp, L".obse"))
-             && ((sPos = wcswcs(temp, L"\\My Games\\Skyrim\\Saves\\")) != NULL)) {
+             && ((sPos = wcswcs(temp, L"\\My Games\\Skyrim\\Saves\\")) != nullptr)) {
     // !workaround! skse saving to hard-coded path
     result = m_ProfilePath + L"\\saves\\" + (sPos + 23);
-    if (rerouted != NULL) {
+    if (rerouted != nullptr) {
       *rerouted = true;
     }
   } else if (StartsWith(temp, m_DataPathAbsoluteW.c_str())
@@ -858,9 +858,9 @@ std::wstring ModInfo::getRerouteOpenExisting(LPCWSTR originalName, bool preferOr
         result = originalName;
       } else {
         // it's not rerouted if the file comes from data directory
-        if ((rerouted != NULL) && (origin != m_DataOrigin)) {
+        if ((rerouted != nullptr) && (origin != m_DataOrigin)) {
           *rerouted = true;
-          if (originID != NULL) {
+          if (originID != nullptr) {
             *originID = origin;
           }
         }

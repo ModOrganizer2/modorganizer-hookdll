@@ -36,12 +36,12 @@ LPVOID MyGetProcAddress(HMODULE module, LPCSTR functionName)
 {
   PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)module;
   if (dosHeader->e_magic != IMAGE_DOS_SIGNATURE) {
-    return NULL;
+    return nullptr;
   }
 
   PIMAGE_NT_HEADERS ntHeaders = (PIMAGE_NT_HEADERS)(((LPBYTE)dosHeader) + dosHeader->e_lfanew);
   if (ntHeaders->Signature != IMAGE_NT_SIGNATURE) {
-    return NULL;
+    return nullptr;
   }
 
   PIMAGE_OPTIONAL_HEADER optionalHeader = &ntHeaders->OptionalHeader;
@@ -63,7 +63,7 @@ LPVOID MyGetProcAddress(HMODULE module, LPCSTR functionName)
         ++forwardFunctionName;
 
         HMODULE forwardLib = ::LoadLibraryA(forwardLibName);
-        LPVOID forward = NULL;
+        LPVOID forward = nullptr;
         if (forwardLib) {
           forward = MyGetProcAddress(forwardLib, forwardFunctionName);
         }
@@ -73,7 +73,7 @@ LPVOID MyGetProcAddress(HMODULE module, LPCSTR functionName)
       return (void*)((BYTE*)module + funcAddr[nameOrdinals[i]]);
     }
   }
-  return NULL;
+  return nullptr;
 }
 
 
@@ -84,14 +84,14 @@ ApiHook::ApiHook(LPCTSTR moduleName,
   :	_reroute(0), _moduleName(moduleName), _functionName(functionName), _bytesMoved(0), _installed(false)
 {
 	HMODULE mh = ::GetModuleHandle(moduleName);
-	if (mh != NULL) {
+	if (mh != nullptr) {
     // using custom getprocaddress to avoid tools that hook getprocaddress (like AcLayer)
     _origPos = (LPVOID)(MyGetProcAddress(mh, functionName));
   } else {
     Logger::Instance().error("%s is not a valid module name", moduleName);
     throw std::runtime_error("hook failed");
   }
-  if (_origPos == NULL) {
+  if (_origPos == nullptr) {
     Logger::Instance().error("%s is not a function in %ls", functionName, moduleName);
     throw std::runtime_error("hook failed");
 	}
@@ -134,8 +134,8 @@ void ApiHook::AddrReplace(LPBYTE start,
 													size_t size,
 													BOOL relative_adjust)
 {
-  if (start == NULL) throw std::runtime_error("NULL-Pointer as start-address");
-	if (start == NULL) throw std::runtime_error("NULL-Pointer as replacement-address");
+  if (start == nullptr) throw std::runtime_error("nullptr-Pointer as start-address");
+	if (start == nullptr) throw std::runtime_error("nullptr-Pointer as replacement-address");
 
 	BOOL found = FALSE;
 
@@ -196,7 +196,7 @@ size_t ApiHook::CreateReroute(LPBYTE original)
 	size_t jlen = sizeof(void*) + 1;					// size of a jump: 1 byte opcode + size of an address
 
 	// allocate memory for the reroute that is executable
-  _reroute = reinterpret_cast<LPBYTE>(::VirtualAlloc(NULL,
+  _reroute = reinterpret_cast<LPBYTE>(::VirtualAlloc(nullptr,
 																			size + jlen + sizeof(char*) + relativeAdd,
 																			MEM_COMMIT | MEM_RESERVE,
 																			PAGE_EXECUTE_READWRITE));

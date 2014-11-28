@@ -137,7 +137,7 @@ LPCSTR GetBaseName(LPCSTR string)
 LPCWSTR GetBaseName(LPCWSTR string)
 {
   LPCWSTR result;
-  if ((string == NULL) || (string[0] == L'\0')) {
+  if ((string == nullptr) || (string[0] == L'\0')) {
     result = string;
   } else {
     result = string + wcslen(string) - 1;
@@ -200,7 +200,7 @@ void Canonicalize(LPWSTR destination, LPCWSTR source, size_t bufferSize)
 
 const wchar_t *wcsrpbrk(const wchar_t *string, const wchar_t *control)
 {
-  const wchar_t *lastPos = NULL;
+  const wchar_t *lastPos = nullptr;
   while (*string != L'\0') {
     const wchar_t *iter = control;
     while (*iter != L'\0') {

@@ -27,13 +27,13 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 
 
 Disasm::Disasm() throw()
-  : _cmd_info(), _start(NULL), _cur(NULL), _64bit(false)
+  : _cmd_info(), _start(nullptr), _cur(nullptr), _64bit(false)
 {
 }
 
 
 Disasm::Disasm(PBYTE code, bool e64bit)
-  : _cmd_info(), _start(NULL), _cur(NULL)
+  : _cmd_info(), _start(nullptr), _cur(nullptr)
 {
 	Init(code, e64bit);
 }
@@ -569,7 +569,7 @@ const PBYTE Disasm::GetParam1() throw()
 }
 
 FuncDisasm::FuncDisasm() throw()
-  : _start(NULL), _end(NULL)
+  : _start(nullptr), _end(nullptr)
 {
 }
 
