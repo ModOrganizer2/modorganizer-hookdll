@@ -514,7 +514,9 @@ void ModInfo::removeModFile(const std::wstring &fileName)
   if (StartsWith(fullPath, m_DataPathAbsoluteW.c_str()) &&
       (wcslen(fullPath) != m_DataPathAbsoluteW.length())) {
     int origin = -1;
-    m_DirectoryStructure.removeFile(fullPath + m_DataPathAbsoluteW.length() + 1, &origin);
+    if (!m_DirectoryStructure.removeFile(fullPath + m_DataPathAbsoluteW.length() + 1, &origin)) {
+      Logger::Instance().error("failed to remove virtual file %ls", fullPath + m_DataPathAbsoluteW.length() + 1);
+    }
     addRemoval(fileName, origin);
     LOGDEBUG("remove mod file %ls", fileName.c_str());
   }
