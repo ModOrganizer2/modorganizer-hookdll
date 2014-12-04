@@ -1,0 +1,4 @@
+steam.exe
+chrome.exe
+firefox.exe
+TSVNCache.exe

@@ -42,7 +42,8 @@ HEADERS += \
     hooklock.h
 
 OTHER_FILES += \
-    version.rc
+    version.rc \
+    process_blacklist.txt
 
 RC_FILE += \
   version.rc

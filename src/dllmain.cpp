@@ -225,7 +225,7 @@ BOOL WINAPI CreateProcessA_rep(LPCSTR lpApplicationName,
            lpApplicationName != NULL ? lpApplicationName : "null",
            lpCommandLine != NULL ? lpCommandLine : "null",
            lpCurrentDirectory != NULL ? lpCurrentDirectory : "null",
-           blacklisted ? "NOT hooking" : "hooking");
+           blacklisted ? "blacklisted" : "hooking");
 
   std::string reroutedCwd;
   if (lpCurrentDirectory != NULL) {
