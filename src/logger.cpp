@@ -82,6 +82,7 @@ Logger::~Logger()
   DWORD sizeWritten = 0;
   static const char Footer[] = "----------- LOG END -----------\r\n";
   ::WriteFile(m_LogFile, Footer, strlen(Footer), &sizeWritten, NULL);
+  ::FlushFileBuffers(m_LogFile);
   ::CloseHandle(m_LogFile);
 
   wrapUpLog();

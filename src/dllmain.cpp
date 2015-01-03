@@ -58,6 +58,11 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #endif // LEAK_CHECK_WITH_VLD
 
 
+
+#include <Windows.h>
+#include <Shlwapi.h>
+#include <ShlObj.h>
+
 using namespace MOShared;
 
 
@@ -225,7 +230,7 @@ BOOL WINAPI CreateProcessA_rep(LPCSTR lpApplicationName,
            lpApplicationName != NULL ? lpApplicationName : "null",
            lpCommandLine != NULL ? lpCommandLine : "null",
            lpCurrentDirectory != NULL ? lpCurrentDirectory : "null",
-           blacklisted ? "blacklisted" : "hooking");
+           blacklisted ? "NOT hooking" : "hooking");
 
   std::string reroutedCwd;
   if (lpCurrentDirectory != NULL) {
@@ -251,7 +256,7 @@ BOOL WINAPI CreateProcessA_rep(LPCSTR lpApplicationName,
     Logger::Instance().error("failed to inject into %s: %s", lpApplicationName, e.what());
   }
 
-  if (  (!susp) && (::ResumeThread(lpProcessInformation->hThread) == (DWORD)-1)) {
+  if (!susp && (::ResumeThread(lpProcessInformation->hThread) == (DWORD)-1)) {
     Logger::Instance().error("failed to inject into spawned process");
     return FALSE;
   }
@@ -325,7 +330,7 @@ BOOL WINAPI CreateProcessW_rep(LPCWSTR lpApplicationName,
     Logger::Instance().error("failed to inject into %ls: %s", lpApplicationName, e.what());
   }
 
-  if (  (!susp) && (::ResumeThread(lpProcessInformation->hThread) == (DWORD)-1)) {
+  if (!susp && (::ResumeThread(lpProcessInformation->hThread) == (DWORD)-1)) {
     Logger::Instance().error("failed to inject into spawned process");
     return FALSE;
   }
@@ -715,9 +720,24 @@ BOOL WINAPI MoveFileExW_rep(LPCWSTR lpExistingFileName, LPCWSTR lpNewFileName, D
   std::wstring destinationReroute = fullDestinationName;
 
   if (StartsWith(fullDestinationName, modInfo->getDataPathW().c_str())) {
+    destinationReroute = modInfo->getRemovedLocation(fullDestinationName);
+
+    // usually, always move to the overwrite directory. However, in the "create tmp, remove original, move tmp to original"-sequence
+    // we'd rather have the modified file in the original location. If the source file was part of a mod we leave the file in that
+    // mod
     std::wostringstream temp;
-    temp << GameInfo::instance().getOverwriteDir() << "\\" << (fullDestinationName + modInfo->getDataPathW().length() + 1);
-    destinationReroute = temp.str();
+    if (!destinationReroute.empty()) {
+      // In the "create tmp, remove original, move tmp to original"-sequence we'd rather have the modified file in the original location.
+    } else if (rerouted && (originID != -1)) {
+      // source file is rerouted, destination file would be in data. use the same directory instead
+      FilesOrigin origin = modInfo->getFilesOrigin(originID);
+      temp << origin.getPath() << "\\" << (fullDestinationName + modInfo->getDataPathW().length() + 1);
+      destinationReroute = temp.str();
+    } else {
+      // default case - reroute to overwrite
+      temp << GameInfo::instance().getOverwriteDir() << "\\" << (fullDestinationName + modInfo->getDataPathW().length() + 1);
+      destinationReroute = temp.str();
+    }
   }
 
   { // create intermediate directories
@@ -1794,6 +1814,7 @@ int STDAPICALLTYPE SHFileOperationA_rep(LPSHFILEOPSTRUCTA lpFileOp)
           modInfo->addOverwriteFile(ToWString(rerouteFilename, false));
         }
       }
+
       newTo.insert(newTo.end(), rerouteFilename.begin(), rerouteFilename.end());
       newTo.push_back('\0');
       pos += strlen(pos) + 1;
@@ -2565,7 +2586,7 @@ void SetUpBlacklist()
 
     blacklistFile.close();
   } else {
-    std::list<std::string> temp = boost::assign::list_of("steam.exe")("chrome.exe")("firefox.exe");
+    std::list<std::string> temp = { "steam.exe", "chrome.exe", "firefox.exe" };
     processBlacklist = std::set<std::string>(temp.begin(), temp.end());
   }
 }
@@ -2713,6 +2734,7 @@ BOOL Init(int logLevel, const wchar_t *profileName)
       return TRUE;
     }
 
+  // initialised once we know where mo is installed
     {
       // if a file called mo_path exists in the same directory as the dll, it overrides the
       // path to the mod organizer
@@ -2727,20 +2749,41 @@ BOOL Init(int logLevel, const wchar_t *profileName)
     moPath = pathBuffer;
   }
 
+  std::wstring moDataPath;
+  {
+    std::wifstream instanceFile(ToString(moPath, false) + "\\INSTANCE");
+    if (instanceFile.is_open()) {
+      wchar_t buffer[MAX_PATH_UNICODE];
+      instanceFile.getline(buffer, MAX_PATH_UNICODE);
+      instanceFile.close();
+      moDataPath = buffer;
+    }
+
+    if (moDataPath.length() == 0) {
+      moDataPath = moPath;
+    } else {
+      wchar_t appDataPath[MAX_PATH];
+      if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA, NULL, SHGFP_TYPE_CURRENT, appDataPath))) {
+        moDataPath = std::wstring(appDataPath) + L"\\ModOrganizer\\" + moDataPath;
+      }
+    }
+  }
+
+  // initialised once we know where mo is installed
   std::wostringstream iniName;
   try {
-    iniName << moPath << "\\modorganizer.ini";
+    iniName << moDataPath << "\\modorganizer.ini";
 
     wchar_t pathTemp[MAX_PATH];
     wchar_t gamePath[MAX_PATH];
     ::GetPrivateProfileStringW(L"General", L"gamePath", L"", pathTemp, MAX_PATH, iniName.str().c_str());
     Canonicalize(gamePath, iniDecode(ToString(pathTemp, false).c_str()).c_str());
 
-    if (!GameInfo::init(moPath, gamePath)) {
+    if (!GameInfo::init(moPath, moDataPath, gamePath)) {
       throw std::runtime_error("game not found");
     }
   } catch (const std::exception &e) {
-    MessageBoxA(NULL, e.what(), "initialisation failed", MB_OK);
+    ::MessageBoxA(NULL, e.what(), "initialisation failed", MB_OK);
     return TRUE;
   }
 
