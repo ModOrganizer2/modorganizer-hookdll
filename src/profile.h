@@ -58,7 +58,7 @@ private:
     }
     timeInfo.m_Sum += timeMS;
     ++timeInfo.m_Count;
-    time_t now = time(NULL);
+    time_t now = time(nullptr);
     if (now - s_LastDisplay > 60) {
       displayProfile();
       s_LastDisplay = now;
