@@ -136,8 +136,6 @@ std::set<std::string> usedBSAList;
 
 std::set<std::string> iniFilesA;
 
-std::wstring moPath;
-
 // processes we never want to hook
 std::set<std::string> processBlacklist;
 
@@ -401,7 +399,7 @@ HANDLE WINAPI CreateFileW_rep(LPCWSTR lpFileName,
     // if the regular call causes an error message and rerouted to overwrite
     rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName, false, &rerouted);
     if (!rerouted && !FileExists_reroute(lpFileName)) {
-      rerouteFilename = GameInfo::instance().getOverwriteDir() + L"\\" + (fullFileName + modInfo->getDataPathW().length());
+      rerouteFilename = modInfo->getOverwritePath() + L"\\" + (fullFileName + modInfo->getDataPathW().length());
 
       std::wstring targetDirectory = rerouteFilename.substr(0, rerouteFilename.find_last_of(L"\\/"));
       CreateDirectoryRecursive(targetDirectory.c_str(), nullptr);
@@ -657,7 +655,7 @@ BOOL WINAPI CreateDirectoryW_rep(LPCWSTR lpPathName, LPSECURITY_ATTRIBUTES lpSec
     if (!rerouted) {
       // redirect directory creation to overwrite
       std::wostringstream temp;
-      temp << GameInfo::instance().getOverwriteDir() << "\\" << (fullPathName + modInfo->getDataPathW().length());
+      temp << modInfo->getOverwritePath() << "\\" << (fullPathName + modInfo->getDataPathW().length());
       reroutePath = temp.str();
     }
     LOGDEBUG("create directory: %ls -> %ls", lpPathName, reroutePath.c_str());
@@ -735,7 +733,7 @@ BOOL WINAPI MoveFileExW_rep(LPCWSTR lpExistingFileName, LPCWSTR lpNewFileName, D
       destinationReroute = temp.str();
     } else {
       // default case - reroute to overwrite
-      temp << GameInfo::instance().getOverwriteDir() << "\\" << (fullDestinationName + modInfo->getDataPathW().length() + 1);
+      temp << modInfo->getOverwritePath() << "\\" << (fullDestinationName + modInfo->getDataPathW().length() + 1);
       destinationReroute = temp.str();
     }
   }
@@ -759,48 +757,7 @@ BOOL WINAPI MoveFileExW_rep(LPCWSTR lpExistingFileName, LPCWSTR lpNewFileName, D
 BOOL WINAPI MoveFileW_rep(LPCWSTR lpExistingFileName, LPCWSTR lpNewFileName)
 {
   PROFILE();
-  WCHAR fullSourceName[MAX_PATH];
-  modInfo->getFullPathName(lpExistingFileName, fullSourceName, MAX_PATH);
-  WCHAR fullDestinationName[MAX_PATH];
-  modInfo->getFullPathName(lpNewFileName, fullDestinationName, MAX_PATH);
-
-  // source file definitively needs to be rerouted if it originates from the fake directory
-  bool rerouted = false;
-  int originID = -1;
-  std::wstring sourceReroute = modInfo->getRerouteOpenExisting(fullSourceName, false, &rerouted, &originID);
-  std::wstring destinationReroute = fullDestinationName;
-  LPCWSTR sPos = nullptr;
-  if (StartsWith(fullDestinationName, modInfo->getDataPathW().c_str())) {
-    destinationReroute = modInfo->getRemovedLocation(fullDestinationName);
-
-    std::wostringstream temp;
-    if (!destinationReroute.empty()) {
-      // In the "create tmp, remove original, move tmp to original"-sequence we'd rather have the modified file in the original location.
-    } else if (rerouted && (originID != -1)) {
-      // source file is rerouted, destination file would be in data. use the same directory instead
-      FilesOrigin origin = modInfo->getFilesOrigin(originID);
-      temp << origin.getPath() << "\\" << (fullDestinationName + modInfo->getDataPathW().length() + 1);
-      destinationReroute = temp.str();
-    } else {
-      // default case - reroute to overwrite
-      temp << GameInfo::instance().getOverwriteDir() << "\\" << (fullDestinationName + modInfo->getDataPathW().length() + 1);
-      destinationReroute = temp.str();
-    }
-  } else if ((sPos = wcswcs(fullDestinationName, AppConfig::localSavePlaceholder())) != nullptr) {
-    destinationReroute = modInfo->getProfilePath().append(L"\\saves\\").append(sPos + wcslen(AppConfig::localSavePlaceholder()));
-  }
-
-  { // create intermediate directories
-    std::wstring targetDirectory = destinationReroute.substr(0, destinationReroute.find_last_of(L"\\/"));
-    CreateDirectoryRecursive(targetDirectory.c_str(), nullptr);
-  }
-
-  BOOL res = MoveFileW_reroute(sourceReroute.c_str(), destinationReroute.c_str());
-  if (res) {
-    modInfo->removeModFile(fullSourceName);
-  }
-  LOGDEBUG("move %ls to %ls: %d (%d)", sourceReroute.c_str(), destinationReroute.c_str(), res, ::GetLastError());
-  return res;
+  return MoveFileExW_rep(lpExistingFileName, lpNewFileName, MOVEFILE_COPY_ALLOWED);
 }
 
 BOOL WINAPI MoveFileA_rep(LPCSTR lpExistingFileName, LPCSTR lpNewFileName)
@@ -1435,7 +1392,7 @@ void MakeFileExist(LPCWSTR fileName)
     std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(fileName, false, &rerouted);
     if (!rerouted && !FileExists_reroute(fileName)) {
       std::wostringstream temp;
-      temp << GameInfo::instance().getOverwriteDir() << "\\" << (fullFileName + modInfo->getDataPathW().length());
+      temp << modInfo->getOverwritePath() << "\\" << (fullFileName + modInfo->getDataPathW().length());
       rerouteFilename = temp.str();
 
       std::wstring targetDirectory = rerouteFilename.substr(0, rerouteFilename.find_last_of(L"\\/"));
@@ -1621,7 +1578,7 @@ BOOL WINAPI CopyFileW_rep(LPCWSTR lpExistingFileName, LPCWSTR lpNewFileName, BOO
   bool reroutedToOverwrite = false;
   if (StartsWith(fullNewFileName, modInfo->getDataPathW().c_str())) {
     std::wostringstream temp;
-    temp << GameInfo::instance().getOverwriteDir() << "\\" << (fullNewFileName + modInfo->getDataPathW().length());
+    temp << modInfo->getOverwritePath() << "\\" << (fullNewFileName + modInfo->getDataPathW().length());
     rerouteNewFileName = temp.str();
 
     std::wstring targetDirectory = rerouteNewFileName.substr(0, rerouteNewFileName.find_last_of(L"\\/"));
@@ -1663,7 +1620,7 @@ BOOL WINAPI CreateHardLinkW_rep(LPCWSTR lpFileName, LPCWSTR lpExistingFileName,
   bool reroutedToOverwrite = false;
   if (StartsWith(fullNewFileName, modInfo->getDataPathW().c_str())) {
     std::wostringstream temp;
-    temp << GameInfo::instance().getOverwriteDir() << "\\" << (fullNewFileName + modInfo->getDataPathW().length());
+    temp << modInfo->getOverwritePath() << "\\" << (fullNewFileName + modInfo->getDataPathW().length());
     rerouteNewFileName = temp.str();
 
     std::wstring targetDirectory = rerouteNewFileName.substr(0, rerouteNewFileName.find_last_of(L"\\/"));
@@ -1803,10 +1760,10 @@ int STDAPICALLTYPE SHFileOperationA_rep(LPSHFILEOPSTRUCTA lpFileOp)
         // TODO need to addOverwriteFile in both cases and if the destination is a directory we need to
         // extract the file name
         if (strlen(pos) == modInfo->getDataPathA().length()) {
-          rerouteFilename = ToString(GameInfo::instance().getOverwriteDir(), false);
+          rerouteFilename = ToString(modInfo->getOverwritePath(), false);
         } else {
           std::ostringstream temp;
-          temp << ToString(GameInfo::instance().getOverwriteDir(), false) << "\\" << (pos + modInfo->getDataPathA().length());
+          temp << ToString(modInfo->getOverwritePath(), false) << "\\" << (pos + modInfo->getDataPathA().length());
           rerouteFilename = temp.str();
 
           std::string targetDirectory = rerouteFilename.substr(0, rerouteFilename.find_last_of("\\/"));
@@ -1872,10 +1829,10 @@ int STDAPICALLTYPE SHFileOperationW_rep(LPSHFILEOPSTRUCTW lpFileOp)
         // TODO need to addOverwriteFile in both cases and if the destination is a directory we need to
         // extract the file name
         if (wcslen(pos) == modInfo->getDataPathW().length()) {
-          rerouteFilename = GameInfo::instance().getOverwriteDir();
+          rerouteFilename = modInfo->getOverwritePath();
         } else {
           std::wostringstream temp;
-          temp << GameInfo::instance().getOverwriteDir() << "\\" << (pos + modInfo->getDataPathW().length());
+          temp << modInfo->getOverwritePath() << "\\" << (pos + modInfo->getDataPathW().length());
           rerouteFilename = temp.str();
 
           std::wstring targetDirectory = rerouteFilename.substr(0, rerouteFilename.find_last_of(L"\\/"));
@@ -2466,7 +2423,7 @@ std::wstring iniDecode(const char *stringEncoded)
 }
 
 
-BOOL SetUp(const std::wstring &iniName, const wchar_t *profileNameIn)
+BOOL SetUp(const std::wstring &iniName, const wchar_t *profileNameIn, const std::wstring &moPath, const std::wstring &moDataPath)
 {
   std::wstring profileName;
   if (profileNameIn[0] == '\0') {
@@ -2480,25 +2437,6 @@ BOOL SetUp(const std::wstring &iniName, const wchar_t *profileNameIn)
     profileName = profileNameIn;
   }
 
-  wchar_t modDirectory[MAX_PATH];
-  {
-    wchar_t temp[MAX_PATH];
-    ::GetPrivateProfileStringW(L"Settings", L"mod_directory", GameInfo::instance().getModsDir().c_str(), temp, MAX_PATH, iniName.c_str());
-    std::wostringstream profileDir;
-    profileDir << GameInfo::instance().getProfilesDir() << "\\" << profileName;
-    if (!FileExists(profileDir.str())) {
-      Logger::Instance().error("profile not found at %ls", profileDir.str().c_str());
-      return FALSE;
-    }
-
-    Canonicalize(modDirectory, temp);
-
-    if (!FileExists(modDirectory)) {
-      Logger::Instance().error("mod directory not found at %ls", temp);
-      return FALSE;
-    }
-  }
-
   std::vector<std::wstring> iniFiles = GameInfo::instance().getIniFileNames();
   for (auto iter = iniFiles.begin(); iter != iniFiles.end(); ++iter) {
     iniFilesA.insert(ToString(ToLower(*iter), false));
@@ -2507,9 +2445,19 @@ BOOL SetUp(const std::wstring &iniName, const wchar_t *profileNameIn)
   Logger::Instance().info("using profile %ls", profileName.c_str());
 
   try {
-    modInfo = new ModInfo(profileName, modDirectory, true);
+    modInfo = new ModInfo(profileName, true, moPath, moDataPath);
   } catch (const std::exception &e) {
     Logger::Instance().error("failed to initialize vfs: %s", e.what());
+    return FALSE;
+  }
+
+  if (!FileExists(modInfo->getProfilePath().c_str())) {
+    Logger::Instance().error("profile not found at %ls", modInfo->getProfilePath().c_str());
+    return FALSE;
+  }
+
+  if (!FileExists(modInfo->getModPathW().c_str())) {
+    Logger::Instance().error("mod directory not found at %ls", modInfo->getModPathW().c_str());
     return FALSE;
   }
 
@@ -2536,7 +2484,7 @@ void nextShortName(char *nameBuffer)
 BOOL SetUpBSAMap()
 {
   std::wostringstream archiveFileName;
-  archiveFileName << GameInfo::instance().getProfilesDir() << L"\\" << modInfo->getProfileName() << L"\\archives.txt";
+  archiveFileName << modInfo->getProfilePath() << L"\\archives.txt";
 
   std::fstream file(archiveFileName.str().c_str());
   if (!file.is_open()) {
@@ -2577,7 +2525,7 @@ BOOL SetUpBSAMap()
 
 void SetUpBlacklist()
 {
-  std::ifstream blacklistFile(ToString(moPath, false) + "\\process_blacklist.txt", std::ifstream::in);
+  std::ifstream blacklistFile(ToString(modInfo->getMOPath(), false) + "\\process_blacklist.txt", std::ifstream::in);
   if (blacklistFile.is_open()) {
     char buffer[MAX_PATH];
     while (blacklistFile.getline(buffer, MAX_PATH)) {
@@ -2706,6 +2654,26 @@ LONG WINAPI VEHandler(PEXCEPTION_POINTERS exceptionPtrs)
   }
 }
 
+std::wstring getMODataPath(const std::wstring &moPath)
+{
+  std::wifstream instanceFile(ToString(moPath, false) + "\\INSTANCE");
+  std::wstring instancePath;
+  if (instanceFile.is_open()) {
+    wchar_t buffer[MAX_PATH];
+    instanceFile.getline(buffer, MAX_PATH);
+    instanceFile.close();
+    instancePath = buffer;
+  }
+
+  if (instancePath.length() != 0) {
+    wchar_t appDataPath[MAX_PATH];
+    if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA, nullptr, SHGFP_TYPE_CURRENT, appDataPath))) {
+      return std::wstring(appDataPath) + L"\\ModOrganizer\\" + instancePath;
+    }
+  }
+  return moPath;
+}
+
 
 BOOL Init(int logLevel, const wchar_t *profileName)
 {
@@ -2734,7 +2702,7 @@ BOOL Init(int logLevel, const wchar_t *profileName)
       return TRUE;
     }
 
-  // initialised once we know where mo is installed
+    // initialised once we know where mo is installed
     {
       // if a file called mo_path exists in the same directory as the dll, it overrides the
       // path to the mod organizer
@@ -2746,33 +2714,14 @@ BOOL Init(int logLevel, const wchar_t *profileName)
         hintFile.close();
       }
     }
-    moPath = pathBuffer;
   }
-
-  std::wstring moDataPath;
-  {
-    std::wifstream instanceFile(ToString(moPath, false) + "\\INSTANCE");
-    if (instanceFile.is_open()) {
-      wchar_t buffer[MAX_PATH_UNICODE];
-      instanceFile.getline(buffer, MAX_PATH_UNICODE);
-      instanceFile.close();
-      moDataPath = buffer;
-    }
-
-    if (moDataPath.length() == 0) {
-      moDataPath = moPath;
-    } else {
-      wchar_t appDataPath[MAX_PATH];
-      if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA, nullptr, SHGFP_TYPE_CURRENT, appDataPath))) {
-        moDataPath = std::wstring(appDataPath) + L"\\ModOrganizer\\" + moDataPath;
-      }
-    }
-  }
+  std::wstring moPath(pathBuffer);
+  std::wstring moDataPath = getMODataPath(moPath);
 
   // initialised once we know where mo is installed
   std::wostringstream iniName;
   try {
-    iniName << moDataPath << "\\modorganizer.ini";
+    iniName << moDataPath << "\\" << AppConfig::iniFileName();
 
     wchar_t pathTemp[MAX_PATH];
     wchar_t gamePath[MAX_PATH];
@@ -2787,7 +2736,7 @@ BOOL Init(int logLevel, const wchar_t *profileName)
     return TRUE;
   }
 
-  std::wstring logFile = GameInfo::instance().getLogDir().append(L"\\").append(AppConfig::logFile());
+  std::wstring logFile = moDataPath + L"\\" + AppConfig::logPath() + L"\\" + AppConfig::logFileName();
 #ifdef UNICODE
   Logger::Init(logFile.c_str(), logLevel);
 #else
@@ -2801,7 +2750,11 @@ BOOL Init(int logLevel, const wchar_t *profileName)
   versionInfo.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEX);
   ::GetVersionEx((OSVERSIONINFO*)&versionInfo);
   winXP = (versionInfo.dwMajorVersion == 5) && (versionInfo.dwMinorVersion == 1);
-  Logger::Instance().info("Windows %d.%d (%s)", versionInfo.dwMajorVersion, versionInfo.dwMinorVersion, versionInfo.wProductType == VER_NT_WORKSTATION ? "workstation" : "server");
+  Logger::Instance().info("Windows %d.%d (%s)",
+                          versionInfo.dwMajorVersion,
+                          versionInfo.dwMinorVersion,
+                          versionInfo.wProductType == VER_NT_WORKSTATION ? "workstation"
+                                                                         : "server");
   ::GetModuleFileNameW(dllModule, pathBuffer, MAX_PATH_UNICODE);
   VS_FIXEDFILEINFO version = GetFileVersion(pathBuffer);
   Logger::Instance().info("hook.dll v%d.%d.%d",
@@ -2815,7 +2768,7 @@ BOOL Init(int logLevel, const wchar_t *profileName)
   ::GetModuleFileNameW(nullptr, filename, MAX_PATH);
   Logger::Instance().info("injecting to %ls", filename);
 
-  if (!SetUp(iniName.str(), profileName)) {
+  if (!SetUp(iniName.str(), profileName, moPath, moDataPath)) {
     Logger::Instance().error("failed to set up");
     return FALSE;
   }

@@ -34,6 +34,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include <ctime>
 #include <util.h>
 #include <iterator>
+#include <Shlobj.h>
 #include <Shlwapi.h>
 #include <fstream>
 #include <sstream>
@@ -67,15 +68,30 @@ bool FileExists_reroute(const std::wstring &filename)
 typedef DWORD (WINAPI *GetFinalPathNameByHandleW_type)(HANDLE, LPCWSTR, DWORD, DWORD);
 
 
-ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirectory, bool enableHiding)
-  : m_ProfileName(profileName), m_ModsPath(modDirectory), m_CurrentDirectory(), m_DirectoryStructure(L"data", nullptr, 0), m_ModCount(0),
-    m_SavesReroute(false)
-
+ModInfo::ModInfo(const std::wstring &profileName, bool enableHiding, const std::wstring &moPath, const std::wstring &moDataPath)
+  : m_ProfileName(profileName)
+  , m_CurrentDirectory()
+  , m_MOPathW(moPath)
+  , m_MODataPathW(moDataPath)
+  , m_DirectoryStructure(L"data", nullptr, 0)
+  , m_ModCount(0)
+  , m_SavesReroute(false)
 {
-  // modlist
-  std::wostringstream temp;
-  temp << GameInfo::instance().getProfilesDir() << "\\" << profileName;
-  m_ProfilePath = temp.str();
+  m_ProfilePath = m_MODataPathW + L"\\" + AppConfig::profilesPath() + L"\\" + profileName;
+  m_OverwritePathW = m_MODataPathW + L"\\" + AppConfig::overwritePath();
+
+  {
+    wchar_t temp[MAX_PATH];
+
+    ::GetPrivateProfileStringW(L"Settings", L"mod_directory",
+                               (m_MODataPathW + L"\\" + AppConfig::modsPath()).c_str(),
+                               temp, MAX_PATH, (m_MODataPathW + L"\\" + AppConfig::iniFileName()).c_str());
+
+    wchar_t modDirectory[MAX_PATH];
+    Canonicalize(modDirectory, temp);
+
+    m_ModsPath = modDirectory;
+  }
 
   m_TweakedIniPathW = m_ProfilePath + L"\\initweaks.ini";
   m_TweakedIniPathA = ToString(m_TweakedIniPathW, false);
@@ -157,7 +173,7 @@ ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirecto
       if (*bufferPtr == '+') {
         ++bufferPtr;
       } // leave * for now to identify foreign mods, it can't be part of a valid file name anyway
-      temp.str(L""); temp.clear();
+      std::wostringstream temp;
       temp << m_ModsPath << L"\\" << ToWString(bufferPtr, true);
       if ((buffer[0] != '*') && !FileExists(temp.str())) {
         Logger::Instance().error("mod \"%ls\" doesn't exist, maybe there is a typo?", temp.str().c_str());
@@ -213,7 +229,7 @@ ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirecto
   }
 
   LOGDEBUG("indexing overwrite");
-  m_DirectoryStructure.addFromOrigin(L"overwrite", GameInfo::instance().getOverwriteDir(), index);
+  m_DirectoryStructure.addFromOrigin(L"overwrite", m_OverwritePathW, index);
 
   LOGDEBUG("update vfs took %ld seconds", time(nullptr) - start);
 
@@ -232,7 +248,7 @@ ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirecto
   }
 
   m_UpdateOriginIDs.push_back(m_DirectoryStructure.getOriginByName(L"overwrite").getID());
-  m_UpdateHandles.push_back(::FindFirstChangeNotificationW(GameInfo::instance().getOverwriteDir().c_str(), TRUE, FILE_NOTIFY_CHANGE_FILE_NAME));
+  m_UpdateHandles.push_back(::FindFirstChangeNotificationW(m_OverwritePathW.c_str(), TRUE, FILE_NOTIFY_CHANGE_FILE_NAME));
   // dumpDirectoryStructure(&m_DirectoryStructure, 0);
 }
 
@@ -287,7 +303,6 @@ std::wstring ModInfo::reverseReroute(const std::wstring &path, bool *rerouted)
   std::wstring result;
   wchar_t temp[MAX_PATH];
   Canonicalize(temp, path.c_str(), MAX_PATH);
-  std::wstring overwriteDir = GameInfo::instance().getOverwriteDir();
   if (StartsWith(temp, m_ModsPath.c_str())) {
     wchar_t *relPath = temp + m_ModsPath.length();
     if (*relPath != L'\0') relPath += 1;
@@ -302,8 +317,8 @@ std::wstring ModInfo::reverseReroute(const std::wstring &path, bool *rerouted)
     }
 
     if (rerouted != nullptr) *rerouted = true;
-  } else if (StartsWith(temp, overwriteDir.c_str())) {
-    wchar_t *relPath = temp + overwriteDir.length();
+  } else if (StartsWith(temp, m_OverwritePathW.c_str())) {
+    wchar_t *relPath = temp + m_OverwritePathW.length();
     if (*relPath != L'\0') relPath += 1;
     Canonicalize(temp, (m_DataPathAbsoluteW + L"\\" + relPath).c_str());
     result.assign(temp);
@@ -341,6 +356,12 @@ bool ModInfo::setCwd(const std::wstring &currentDirectory)
     m_CurrentDirectory.clear();
   }
   return !m_CurrentDirectory.empty();
+}
+
+void ModInfo::setMOPath(const std::wstring &moPath)
+{
+  m_MOPathW = moPath;
+
 }
 
 
@@ -435,7 +456,7 @@ void ModInfo::addModFile(const std::wstring &fileName)
     wcsncpy(buffer, modName, len);
     buffer[len] = L'\0';
     addModFile(buffer, fileName);
-  } else if (StartsWith(fileName.c_str(), GameInfo::instance().getOverwriteDir().c_str())) {
+  } else if (StartsWith(fileName.c_str(), m_OverwritePathW.c_str())) {
     addOverwriteFile(fileName);
   } else {
     Logger::Instance().error("not a mod directory: %ls", fileName.c_str());
@@ -651,10 +672,9 @@ HANDLE ModInfo::dataSearch(LPCWSTR absoluteFileName,
 
   // and the overwrite folder too
   {
-    std::wostringstream fullPath;
-    fullPath << GameInfo::instance().getOverwriteDir() << "\\" << (absoluteFileName + filenameOffset);
+    std::wstring fullPath = m_OverwritePathW + L"\\" + (absoluteFileName + filenameOffset);
     ::ZeroMemory(&searchData, sizeof(WIN32_FIND_DATAW));
-    dataHandle = FindFirstFileExW_reroute(fullPath.str().c_str(), fInfoLevelId, &searchData, fSearchOp, lpSearchFilter, dwAdditionalFlags);
+    dataHandle = FindFirstFileExW_reroute(fullPath.c_str(), fInfoLevelId, &searchData, fSearchOp, lpSearchFilter, dwAdditionalFlags);
 
     if (dataHandle != INVALID_HANDLE_VALUE) {
       addSearchResults(searchBuffer, primaryHandle, dataHandle, relativePath, searchData);

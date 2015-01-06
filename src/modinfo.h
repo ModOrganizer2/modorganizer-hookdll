@@ -36,7 +36,7 @@ class ModInfo {
 
 public:
 
-  ModInfo(const std::wstring &profileName, const std::wstring &modDirectory, bool enableHiding);
+  ModInfo(const std::wstring &profileName, bool enableHiding, const std::wstring &moPath, const std::wstring &moDataPath);
   ~ModInfo();
 
   /**
@@ -89,6 +89,11 @@ public:
 
   const std::wstring &getModPathW() const { return m_ModsPath; }
 
+  const std::wstring &getMOPath() const { return m_MOPathW; }
+  const std::wstring &getMODataPath() const { return m_MODataPathW; }
+
+  const std::wstring &getOverwritePath() const { return m_OverwritePathW; }
+
   void dumpDirectoryStructure(const MOShared::DirectoryEntry *directory, int indent);
 
   std::wstring getCurrentDirectory();
@@ -133,6 +138,8 @@ private:
 
   void addRemoval(const std::wstring &fileName, int origin);
 
+  void setMOPath(const std::wstring &moPath);
+
 private:
 
   struct RemovalInfo {
@@ -158,6 +165,11 @@ private:
   std::wstring m_DataPathAbsoluteW;
 
   std::wstring m_DataPathAbsoluteAlternativeW;
+
+  std::wstring m_MOPathW;
+  std::wstring m_MODataPathW;
+
+  std::wstring m_OverwritePathW;
 
   std::vector<std::wstring> m_ModList;
   std::set<int> m_ModAccess;
