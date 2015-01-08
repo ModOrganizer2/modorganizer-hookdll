@@ -288,7 +288,7 @@ std::wstring ModInfo::reverseReroute(const std::wstring &path, bool *rerouted)
   wchar_t temp[MAX_PATH];
   Canonicalize(temp, path.c_str(), MAX_PATH);
   std::wstring overwriteDir = GameInfo::instance().getOverwriteDir();
-  if (StartsWith(temp, m_ModsPath.c_str())) {
+  if (PathStartsWith(temp, m_ModsPath.c_str())) {
     wchar_t *relPath = temp + m_ModsPath.length();
     if (*relPath != L'\0') relPath += 1;
     // skip the mod name
@@ -302,7 +302,7 @@ std::wstring ModInfo::reverseReroute(const std::wstring &path, bool *rerouted)
     }
 
     if (rerouted != NULL) *rerouted = true;
-  } else if (StartsWith(temp, overwriteDir.c_str())) {
+  } else if (PathStartsWith(temp, overwriteDir.c_str())) {
     wchar_t *relPath = temp + overwriteDir.length();
     if (*relPath != L'\0') relPath += 1;
     Canonicalize(temp, (m_DataPathAbsoluteW + L"\\" + relPath).c_str());
@@ -347,12 +347,12 @@ bool ModInfo::setCwd(const std::wstring &currentDirectory)
 void ModInfo::checkPathAlternative(LPCWSTR path)
 {
   if (m_DataPathAbsoluteAlternativeW.length() != 0) {
-    if (StartsWith(path, m_DataPathAbsoluteAlternativeW.c_str())) {
+    if (PathStartsWith(path, m_DataPathAbsoluteAlternativeW.c_str())) {
       m_DataPathAbsoluteW = m_DataPathAbsoluteAlternativeW;
       m_DataPathAbsoluteA = ToString(m_DataPathAbsoluteW, false);
       m_DataPathAbsoluteAlternativeW.clear();
       Logger::Instance().info("using alternative data path");
-    } else if (StartsWith(path, m_DataPathAbsoluteW.c_str())) {
+    } else if (PathStartsWith(path, m_DataPathAbsoluteW.c_str())) {
       m_DataPathAbsoluteAlternativeW.clear();
     }
   }
@@ -428,14 +428,14 @@ void ModInfo::loadDeleters(const std::string &listFileName)
 
 void ModInfo::addModFile(const std::wstring &fileName)
 {
-  if (StartsWith(fileName.c_str(), m_ModsPath.c_str())) {
+  if (PathStartsWith(fileName.c_str(), m_ModsPath.c_str())) {
     wchar_t buffer[MAX_PATH];
     LPCWSTR modName = fileName.c_str() + m_ModsPath.length() + 1;
     size_t len = wcscspn(modName, L"\\/");
     wcsncpy(buffer, modName, len);
     buffer[len] = L'\0';
     addModFile(buffer, fileName);
-  } else if (StartsWith(fileName.c_str(), GameInfo::instance().getOverwriteDir().c_str())) {
+  } else if (PathStartsWith(fileName.c_str(), GameInfo::instance().getOverwriteDir().c_str())) {
     addOverwriteFile(fileName);
   } else {
     Logger::Instance().error("not a mod directory: %ls", fileName.c_str());
@@ -511,7 +511,7 @@ void ModInfo::removeModFile(const std::wstring &fileName)
   WCHAR fullPath[MAX_PATH];
   getFullPathName(fileName.c_str(), fullPath, MAX_PATH);
 
-  if (StartsWith(fullPath, m_DataPathAbsoluteW.c_str()) &&
+  if (PathStartsWith(fullPath, m_DataPathAbsoluteW.c_str()) &&
       (wcslen(fullPath) != m_DataPathAbsoluteW.length())) {
     int origin = -1;
     if (!m_DirectoryStructure.removeFile(fullPath + m_DataPathAbsoluteW.length() + 1, &origin)) {
@@ -692,7 +692,7 @@ HANDLE ModInfo::findStart(LPCWSTR lpFileName,
   WCHAR temp[MAX_PATH];
   getFullPathName(lpFileName, temp, MAX_PATH);
   FileEntry::Ptr file;
-  if (StartsWith(temp, m_DataPathAbsoluteW.c_str())) {
+  if (PathStartsWith(temp, m_DataPathAbsoluteW.c_str())) {
     file = m_DirectoryStructure.searchFile(temp + m_DataPathAbsoluteW.length() + 1, NULL);
   }
   if (rerouted != NULL) *rerouted = false;
@@ -708,9 +708,7 @@ HANDLE ModInfo::findStart(LPCWSTR lpFileName,
     getFullPathName(lpFileName, absoluteFileName, MAX_PATH);
 
     size_t filenameOffset = 0;
-    if ((StartsWith(absoluteFileName, m_DataPathAbsoluteW.c_str())) &&
-        ((absoluteFileName[m_DataPathAbsoluteW.length()] == '\\') ||
-         (absoluteFileName[m_DataPathAbsoluteW.length()] == '/'))) {
+    if (PathStartsWith(absoluteFileName, m_DataPathAbsoluteW.c_str())) {
       if (rerouted != NULL) *rerouted = true;
       filenameOffset = m_DataPathAbsoluteW.length();
     } else {
