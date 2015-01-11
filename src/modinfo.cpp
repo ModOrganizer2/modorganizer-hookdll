@@ -125,7 +125,7 @@ ModInfo::ModInfo(const std::wstring &profileName, const std::wstring &modDirecto
 
     if (m_DataPathAbsoluteAlternativeW.length() == 0) {
       std::wstring regPath = GameInfo::instance().getRegPath();
-      if (!StartsWith(m_DataPathAbsoluteW.c_str(), regPath.c_str())) {
+      if (!PathStartsWith(m_DataPathAbsoluteW.c_str(), regPath.c_str())) {
         regPath.append(L"\\data");
         wchar_t temp[MAX_PATH];
         Canonicalize(temp, regPath.c_str());
@@ -362,7 +362,7 @@ void ModInfo::checkPathAlternative(LPCWSTR path)
 void ModInfo::addAlternativePath(const std::wstring &path)
 {
   if ((m_DataPathAbsoluteAlternativeW.length() == 0) &&
-      (!StartsWith(m_DataPathAbsoluteW.c_str(), path.c_str()))) {
+      (!PathStartsWith(m_DataPathAbsoluteW.c_str(), path.c_str()))) {
     wchar_t temp[MAX_PATH];
     Canonicalize(temp, (path + L"\\data").c_str());
     if (FileExists(std::wstring(temp) + L"\\" + GameInfo::instance().getReferenceDataFile())) {
@@ -708,7 +708,8 @@ HANDLE ModInfo::findStart(LPCWSTR lpFileName,
     getFullPathName(lpFileName, absoluteFileName, MAX_PATH);
 
     size_t filenameOffset = 0;
-    if (PathStartsWith(absoluteFileName, m_DataPathAbsoluteW.c_str())) {
+    if (PathStartsWith(absoluteFileName, m_DataPathAbsoluteW.c_str())
+        && (absoluteFileName[m_DataPathAbsoluteW.length()] != L'\0')) {
       if (rerouted != NULL) *rerouted = true;
       filenameOffset = m_DataPathAbsoluteW.length();
     } else {
@@ -849,7 +850,7 @@ std::wstring ModInfo::getRerouteOpenExisting(LPCWSTR originalName, bool preferOr
     if (rerouted != NULL) {
       *rerouted = true;
     }
-  } else if (StartsWith(temp, m_DataPathAbsoluteW.c_str())
+  } else if (PathStartsWith(temp, m_DataPathAbsoluteW.c_str())
              && (wcslen(temp) != m_DataPathAbsoluteW.length())) {
     if (!preferOriginal || !FileExists_reroute(temp)) {
       int origin = 0;
