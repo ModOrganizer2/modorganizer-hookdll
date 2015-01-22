@@ -2751,7 +2751,6 @@ BOOL Init(int logLevel, const wchar_t *profileName)
 #else
   Logger::Init(ToString(logFile, false).c_str(), logLevel);
 #endif
-
   exceptionHandler = ::AddVectoredExceptionHandler(0, VEHandler);
 
   OSVERSIONINFOEX versionInfo;
@@ -2768,7 +2767,6 @@ BOOL Init(int logLevel, const wchar_t *profileName)
                           version.dwFileVersionLS >> 16);
 
   Logger::Instance().info("Code page: %ld", GetACP());
-
   wchar_t filename[MAX_PATH];
   ::GetModuleFileNameW(NULL, filename, MAX_PATH);
   Logger::Instance().info("injecting to %ls", filename);
@@ -2815,7 +2813,6 @@ BOOL APIENTRY DllMain(HMODULE module,
                       LPVOID)
 {
   LPVOID tlsData;
-
   switch (reasonForCall) {
     case DLL_PROCESS_ATTACH: {
       dllModule = module;
