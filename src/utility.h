@@ -28,6 +28,11 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 bool StartsWith(LPCSTR string, LPCSTR subString);
 bool StartsWith(LPCWSTR string, LPCWSTR subString);
 
+// pathstartswith is like startswith but also ensures that string (a path) has a path separator after the substring (or it ends there)
+
+bool PathStartsWith(LPCSTR string, LPCSTR subString);
+bool PathStartsWith(LPCWSTR string, LPCWSTR subString);
+
 bool EndsWith(LPCSTR string, LPCSTR subString);
 bool EndsWith(LPCWSTR string, LPCWSTR subString);
 

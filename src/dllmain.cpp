@@ -394,7 +394,7 @@ HANDLE WINAPI CreateFileW_rep(LPCWSTR lpFileName,
        || (dwCreationDisposition == CREATE_NEW)
        || (dwCreationDisposition == OPEN_ALWAYS)
        )
-      && (StartsWith(fullFileName, modInfo->getDataPathW().c_str()))) {
+      && (PathStartsWith(fullFileName, modInfo->getDataPathW().c_str()))) {
     // need to check if the file exists. If it does, act on the existing file, otherwise the behaviour is not transparent
     // if the regular call causes an error message and rerouted to overwrite
     rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName, false, &rerouted);
@@ -436,7 +436,7 @@ HANDLE WINAPI CreateFileW_rep(LPCWSTR lpFileName,
 
   HANDLE result = CreateFileW_reroute(rerouteFilename.c_str(), dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
 
-  if (   StartsWith(fullFileName, modInfo->getDataPathW().c_str())
+  if (PathStartsWith(fullFileName, modInfo->getDataPathW().c_str())
       && (result != INVALID_HANDLE_VALUE)
       && (dwFlagsAndAttributes == FILE_FLAG_BACKUP_SEMANTICS)) {
     LOGDEBUG("handle opened with backup semantics: %ls", lpFileName);
@@ -651,7 +651,7 @@ BOOL WINAPI CreateDirectoryW_rep(LPCWSTR lpPathName, LPSECURITY_ATTRIBUTES lpSec
 
   bool rerouted = false;
   std::wstring reroutePath = modInfo->getRerouteOpenExisting(fullPathName, false, &rerouted);
-  if (StartsWith(fullPathName, modInfo->getDataPathW().c_str())) {
+  if (PathStartsWith(fullPathName, modInfo->getDataPathW().c_str())) {
     if (!rerouted) {
       // redirect directory creation to overwrite
       std::wostringstream temp;
@@ -676,7 +676,7 @@ BOOL WINAPI DeleteFileW_rep(LPCWSTR lpFileName)
   modInfo->getFullPathName(lpFileName, buffer, MAX_PATH);
   LPCWSTR sPos = nullptr;
 
-  if (StartsWith(buffer, modInfo->getDataPathW().c_str())) {
+  if (PathStartsWith(buffer, modInfo->getDataPathW().c_str())) {
     std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
     modInfo->removeModFile(lpFileName);
     Logger::Instance().info("deleting %ls -> %ls", lpFileName, rerouteFilename.c_str());
@@ -717,7 +717,7 @@ BOOL WINAPI MoveFileExW_rep(LPCWSTR lpExistingFileName, LPCWSTR lpNewFileName, D
   std::wstring sourceReroute = modInfo->getRerouteOpenExisting(fullSourceName, false, &rerouted, &originID);
   std::wstring destinationReroute = fullDestinationName;
 
-  if (StartsWith(fullDestinationName, modInfo->getDataPathW().c_str())) {
+  if (PathStartsWith(fullDestinationName, modInfo->getDataPathW().c_str())) {
     destinationReroute = modInfo->getRemovedLocation(fullDestinationName);
 
     // usually, always move to the overwrite directory. However, in the "create tmp, remove original, move tmp to original"-sequence
@@ -1386,7 +1386,7 @@ void MakeFileExist(LPCWSTR fileName)
 
   bool rerouted = false;
 
-  if (StartsWith(fullFileName, modInfo->getDataPathW().c_str())) {
+  if (PathStartsWith(fullFileName, modInfo->getDataPathW().c_str())) {
     // need to check if the file exists. If it does, act on the existing file, otherwise the behaviour is not transparent
     // if the regular call causes an error message and rerouted to overwrite
     std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(fileName, false, &rerouted);
@@ -1576,7 +1576,7 @@ BOOL WINAPI CopyFileW_rep(LPCWSTR lpExistingFileName, LPCWSTR lpNewFileName, BOO
   std::wstring rerouteNewFileName = fullNewFileName;
 
   bool reroutedToOverwrite = false;
-  if (StartsWith(fullNewFileName, modInfo->getDataPathW().c_str())) {
+  if (PathStartsWith(fullNewFileName, modInfo->getDataPathW().c_str())) {
     std::wostringstream temp;
     temp << modInfo->getOverwritePath() << "\\" << (fullNewFileName + modInfo->getDataPathW().length());
     rerouteNewFileName = temp.str();
@@ -1618,7 +1618,7 @@ BOOL WINAPI CreateHardLinkW_rep(LPCWSTR lpFileName, LPCWSTR lpExistingFileName,
   std::wstring rerouteNewFileName = fullNewFileName;
 
   bool reroutedToOverwrite = false;
-  if (StartsWith(fullNewFileName, modInfo->getDataPathW().c_str())) {
+  if (PathStartsWith(fullNewFileName, modInfo->getDataPathW().c_str())) {
     std::wostringstream temp;
     temp << modInfo->getOverwritePath() << "\\" << (fullNewFileName + modInfo->getDataPathW().length());
     rerouteNewFileName = temp.str();
@@ -1756,7 +1756,7 @@ int STDAPICALLTYPE SHFileOperationA_rep(LPSHFILEOPSTRUCTA lpFileOp)
 
       bool rerouted = false;
       std::string rerouteFilename = modInfo->getRerouteOpenExisting(pos, false, &rerouted);
-      if (!rerouted && StartsWith(pos, modInfo->getDataPathA().c_str())) {
+      if (!rerouted && PathStartsWith(pos, modInfo->getDataPathA().c_str())) {
         // TODO need to addOverwriteFile in both cases and if the destination is a directory we need to
         // extract the file name
         if (strlen(pos) == modInfo->getDataPathA().length()) {
@@ -1825,7 +1825,7 @@ int STDAPICALLTYPE SHFileOperationW_rep(LPSHFILEOPSTRUCTW lpFileOp)
 
       bool rerouted = false;
       std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(pos, false, &rerouted);
-      if (!rerouted && StartsWith(pos, modInfo->getDataPathW().c_str())) {
+      if (!rerouted && PathStartsWith(pos, modInfo->getDataPathW().c_str())) {
         // TODO need to addOverwriteFile in both cases and if the destination is a directory we need to
         // extract the file name
         if (wcslen(pos) == modInfo->getDataPathW().length()) {
@@ -2442,6 +2442,7 @@ BOOL SetUp(const std::wstring &iniName, const wchar_t *profileNameIn, const std:
     iniFilesA.insert(ToString(ToLower(*iter), false));
   }
 
+  Logger::Instance().info("mods at %ls", modDirectory);
   Logger::Instance().info("using profile %ls", profileName.c_str());
 
   try {
@@ -2742,7 +2743,6 @@ BOOL Init(int logLevel, const wchar_t *profileName)
 #else
   Logger::Init(ToString(logFile, false).c_str(), logLevel);
 #endif
-
   exceptionHandler = ::AddVectoredExceptionHandler(0, VEHandler);
 
   OSVERSIONINFOEX versionInfo;
@@ -2810,7 +2810,6 @@ BOOL APIENTRY DllMain(HMODULE module,
                       LPVOID)
 {
   LPVOID tlsData;
-
   switch (reasonForCall) {
     case DLL_PROCESS_ATTACH: {
       dllModule = module;

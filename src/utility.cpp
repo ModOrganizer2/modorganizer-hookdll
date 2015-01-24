@@ -30,22 +30,6 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include <locale>
 
 
-bool StartsWith(LPCSTR string, LPCSTR subString)
-{
-  size_t len = strlen(subString);
-  if (strlen(string) < len) {
-    return false;
-  }
-
-  std::locale loc;
-
-  for (size_t i = 0; i < len; ++i) {
-    if (std::tolower(string[i], loc) != std::tolower(subString[i], loc)) {
-      return false;
-    }
-  }
-  return true;
-}
 
 bool Contains(LPCWSTR string, LPCWSTR subString)
 {
@@ -68,6 +52,55 @@ bool Contains(LPCWSTR string, LPCWSTR subString)
   return false;
 }
 
+bool PathStartsWith(LPCSTR string, LPCSTR subString)
+{
+  size_t len = strlen(subString);
+  if (strlen(string) < len) {
+    return false;
+  }
+
+  std::locale loc;
+
+  for (size_t i = 0; i < len; ++i) {
+    if (std::tolower(string[i], loc) != std::tolower(subString[i], loc)) {
+      return false;
+    }
+  }
+  return (string[len] == '\0') || (string[len] == '/') || (string[len] == '\\');
+}
+
+bool PathStartsWith(LPCWSTR string, LPCWSTR subString)
+{
+  size_t len = wcslen(subString);
+  if (wcslen(string) < len) {
+    return false;
+  }
+
+  for (size_t i = 0; i < len; ++i) {
+    if (towlower(string[i]) != towlower(subString[i])) {
+      return false;
+    }
+  }
+  return (string[len] == L'\0') || (string[len] == L'/') || (string[len] == L'\\');
+}
+
+bool StartsWith(LPCSTR string, LPCSTR subString)
+{
+  size_t len = strlen(subString);
+  if (strlen(string) < len) {
+    return false;
+  }
+
+  std::locale loc;
+
+  for (size_t i = 0; i < len; ++i) {
+    if (std::tolower(string[i], loc) != std::tolower(subString[i], loc)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 bool StartsWith(LPCWSTR string, LPCWSTR subString)
 {
   size_t len = wcslen(subString);
@@ -82,7 +115,6 @@ bool StartsWith(LPCWSTR string, LPCWSTR subString)
   }
   return true;
 }
-
 
 bool EndsWith(LPCSTR string, LPCSTR subString)
 {
