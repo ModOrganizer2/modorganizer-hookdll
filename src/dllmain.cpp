@@ -121,6 +121,7 @@ SHFileOperationW_type SHFileOperationW_reroute = SHFileOperationW;
 GetFileVersionInfoW_type GetFileVersionInfoW_reroute = GetFileVersionInfoW;
 GetFileVersionInfoExW_type GetFileVersionInfoExW_reroute = nullptr; // not available on windows xp
 GetFileVersionInfoSizeW_type GetFileVersionInfoSizeW_reroute = GetFileVersionInfoSizeW;
+GetModuleFileNameA_type GetModuleFileNameA_reroute = GetModuleFileNameA;
 GetModuleFileNameW_type GetModuleFileNameW_reroute = GetModuleFileNameW;
 
 NtQueryDirectoryFile_type NtQueryDirectoryFile_reroute;
@@ -1942,6 +1943,20 @@ DWORD WINAPI GetModuleFileNameW_rep(HMODULE hModule, LPWSTR lpFilename, DWORD nS
 }
 
 
+DWORD WINAPI GetModuleFileNameA_rep(HMODULE hModule, LPSTR lpFilename, DWORD nSize)
+{
+  std::wstring buffer;
+  buffer.resize(nSize);
+  DWORD res = GetModuleFileNameW_rep(hModule, &buffer[0], nSize);
+  if (res > 0) {
+    DWORD lastError = ::GetLastError();
+    strncpy_s(lpFilename, nSize, ToString(buffer, false).c_str(), nSize);
+    ::SetLastError(lastError);
+  }
+  return res;
+}
+
+
 typedef struct _IO_STATUS_BLOCK {
     union {
         NTSTATUS Status;
@@ -2356,6 +2371,7 @@ BOOL InitHooks()
     INITHOOK(TEXT("kernel32.dll"), CreateHardLinkA);
     INITHOOK(TEXT("kernel32.dll"), CreateHardLinkW);
     INITHOOK(TEXT("kernel32.dll"), GetFullPathNameW);
+    INITHOOK(TEXT("kernel32.dll"), GetModuleFileNameA);
     INITHOOK(TEXT("kernel32.dll"), GetModuleFileNameW);
     INITHOOK(TEXT("Shell32.dll"), SHFileOperationA);
     INITHOOK(TEXT("Shell32.dll"), SHFileOperationW);
@@ -2442,7 +2458,6 @@ BOOL SetUp(const std::wstring &iniName, const wchar_t *profileNameIn, const std:
     iniFilesA.insert(ToString(ToLower(*iter), false));
   }
 
-  Logger::Instance().info("mods at %ls", modDirectory);
   Logger::Instance().info("using profile %ls", profileName.c_str());
 
   try {
