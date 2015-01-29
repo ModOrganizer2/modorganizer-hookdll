@@ -197,6 +197,9 @@ extern GetFileVersionInfoSizeW_type GetFileVersionInfoSizeW_reroute;
 typedef DWORD (WINAPI *GetModuleFileNameW_type)(HMODULE, LPWSTR, DWORD);
 extern GetModuleFileNameW_type GetModuleFileNameW_reroute;
 
+typedef DWORD (WINAPI *GetModuleFileNameA_type)(HMODULE, LPSTR, DWORD);
+extern GetModuleFileNameA_type GetModuleFileNameA_reroute;
+
 
 
 // ntdll types
