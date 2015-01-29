@@ -737,6 +737,8 @@ BOOL WINAPI MoveFileExW_rep(LPCWSTR lpExistingFileName, LPCWSTR lpNewFileName, D
       temp << modInfo->getOverwritePath() << "\\" << (fullDestinationName + modInfo->getDataPathW().length() + 1);
       destinationReroute = temp.str();
     }
+  } else if (LPCWSTR sPos = wcswcs(fullDestinationName, AppConfig::localSavePlaceholder())) {
+    destinationReroute = modInfo->getProfilePath() + L"\\saves\\" + (sPos + wcslen(AppConfig::localSavePlaceholder()));
   }
 
   { // create intermediate directories
