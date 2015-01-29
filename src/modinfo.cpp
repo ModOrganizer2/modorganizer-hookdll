@@ -141,12 +141,16 @@ ModInfo::ModInfo(const std::wstring &profileName, bool enableHiding, const std::
 
     if (m_DataPathAbsoluteAlternativeW.length() == 0) {
       std::wstring regPath = GameInfo::instance().getRegPath();
+      if (*regPath.rbegin() == '\\') {
+        regPath.resize(regPath.size() - 1);
+      }
+      Logger::Instance().info("%ls vs %ls", m_DataPathAbsoluteW.c_str(), regPath.c_str());
       if (!PathStartsWith(m_DataPathAbsoluteW.c_str(), regPath.c_str())) {
         regPath.append(L"\\data");
         wchar_t temp[MAX_PATH];
         Canonicalize(temp, regPath.c_str());
         m_DataPathAbsoluteAlternativeW = temp;
-        Logger::Instance().info("data path from registry differs from configured game path: %ls", temp);
+        Logger::Instance().info("data path from registry differs from configured game path: %ls", regPath.c_str());
       }
     }
   }
