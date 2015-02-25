@@ -499,6 +499,13 @@ DWORD WINAPI GetFileAttributesW_rep(LPCWSTR lpFileName)
   LPCWSTR baseName = GetBaseName(lpFileName);
   int pathLen = baseName - lpFileName;
 
+  if (usedBSAList.find(ToLower(ToString(baseName, true))) != usedBSAList.end()) {
+    // hide bsa files loaded already through the resource archive list
+    LOGDEBUG("%ls hidden from the game", lpFileName);
+    ::SetLastError(ERROR_FILE_NOT_FOUND);
+    return INVALID_FILE_ATTRIBUTES;
+  }
+
   bool rerouted = false;
 
   std::wstring rerouteFilename;
@@ -1870,11 +1877,14 @@ BOOL WINAPI GetFileVersionInfoW_rep(LPCWSTR lptstrFilename, DWORD dwHandle, DWOR
   WCHAR temp[MAX_PATH];
   modInfo->getFullPathName(lptstrFilename, temp, MAX_PATH);
 
-  std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(temp, false, nullptr);
+  bool rerouted = false;
+  std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(temp, false, &rerouted);
 
   BOOL res = GetFileVersionInfoW_reroute(rerouteFilename.c_str(), dwHandle, dwLen, lpData);
 
-  LOGDEBUG("get file version w %ls -> %ls: %d", lptstrFilename, rerouteFilename.c_str(), res);
+  if (rerouted) {
+    LOGDEBUG("get file version w %ls -> %ls: %d", lptstrFilename, rerouteFilename.c_str(), res);
+  }
 
   return res;
 }
@@ -1891,9 +1901,12 @@ BOOL WINAPI GetFileVersionInfoExW_rep(DWORD dwFlags, LPCWSTR lptstrFilename, DWO
   WCHAR temp[MAX_PATH];
   modInfo->getFullPathName(lptstrFilename, temp, MAX_PATH);
 
-  std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(temp, false, nullptr);
+  bool rerouted = false;
+  std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(temp, false, &rerouted);
 
-  LOGDEBUG("get file version ex w %ls -> %ls", lptstrFilename, rerouteFilename.c_str());
+  if (rerouted) {
+    LOGDEBUG("get file version ex w %ls -> %ls", lptstrFilename, rerouteFilename.c_str());
+  }
 
   return GetFileVersionInfoExW_reroute(dwFlags, rerouteFilename.c_str(), dwHandle, dwLen, lpData);
 }
@@ -1905,11 +1918,14 @@ DWORD WINAPI GetFileVersionInfoSizeW_rep(LPCWSTR lptstrFilename, LPDWORD lpdwHan
   WCHAR temp[MAX_PATH];
   modInfo->getFullPathName(lptstrFilename, temp, MAX_PATH);
 
-  std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(temp, false, nullptr);
+  bool rerouted = false;
+  std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(temp, false, &rerouted);
 
   DWORD res = GetFileVersionInfoSizeW_reroute(rerouteFilename.c_str(), lpdwHandle);
 
-  LOGDEBUG("get file version size %ls -> %ls -> %lu (%x)", lptstrFilename, rerouteFilename.c_str(), res, ::GetLastError());
+  if (rerouted) {
+    LOGDEBUG("get file version size %ls -> %ls -> %lu (%x)", lptstrFilename, rerouteFilename.c_str(), res, ::GetLastError());
+  }
 
   return res;
 }
@@ -1918,7 +1934,12 @@ DWORD WINAPI GetFileVersionInfoSizeW_rep(LPCWSTR lptstrFilename, LPDWORD lpdwHan
 DWORD WINAPI GetModuleFileNameW_rep(HMODULE hModule, LPWSTR lpFilename, DWORD nSize)
 {
   PROFILE();
+
   DWORD oldSize = GetModuleFileNameW_reroute(hModule, lpFilename, nSize);
+  if (HookLock::isLocked(HookLock::GET_MODULENAME_GROUP)) {
+    return oldSize;
+  }
+
   if (oldSize != 0) {
     // found name
     bool isRerouted = false;
@@ -1935,7 +1956,7 @@ DWORD WINAPI GetModuleFileNameW_rep(HMODULE hModule, LPWSTR lpFilename, DWORD nS
       if (reroutedSize > 0) {
         if (reroutedSize < oldSize) {
           // zero out the string windows has previously written to
-          memset(lpFilename, '\0', oldSize * sizeof(wchar_t));
+          memset(lpFilename, '\0', std::min(oldSize, nSize) * sizeof(wchar_t));
         }
         // this truncates the string if the buffer is too small
         wcsncpy(lpFilename, rerouted.c_str(), reroutedSize + 1);
@@ -1949,15 +1970,39 @@ DWORD WINAPI GetModuleFileNameW_rep(HMODULE hModule, LPWSTR lpFilename, DWORD nS
 
 DWORD WINAPI GetModuleFileNameA_rep(HMODULE hModule, LPSTR lpFilename, DWORD nSize)
 {
-  std::wstring buffer;
-  buffer.resize(nSize);
-  DWORD res = GetModuleFileNameW_rep(hModule, &buffer[0], nSize);
-  if (res > 0) {
-    DWORD lastError = ::GetLastError();
-    strncpy_s(lpFilename, nSize, ToString(buffer, false).c_str(), nSize);
-    ::SetLastError(lastError);
+  PROFILE();
+
+  HookLock lock(HookLock::GET_MODULENAME_GROUP);
+
+  DWORD origSize = GetModuleFileNameA_reroute(hModule, lpFilename, nSize);
+
+  if (origSize != 0) {
+    // found name
+    bool isRerouted = false;
+    std::wstring oldName = ToWString(lpFilename, false);
+    std::wstring reroutedW = modInfo->reverseReroute(oldName, &isRerouted);
+    if (isRerouted) {
+      std::string rerouted = ToString(reroutedW, false);
+      DWORD reroutedSize = rerouted.size();
+      if (reroutedSize >= nSize) {
+        if (!winXP) {
+          ::SetLastError(ERROR_INSUFFICIENT_BUFFER);
+        }
+        reroutedSize = nSize - 1;
+      }
+      // res can't be bigger than nSize-1 at this point
+      if (reroutedSize > 0) {
+        if (reroutedSize < origSize) {
+          // zero out the string windows has previously written to
+          memset(lpFilename, '\0', std::min(origSize, nSize) * sizeof(char));
+        }
+        // this truncates the string if the buffer is too small
+        strncpy(lpFilename, rerouted.c_str(), reroutedSize + 1);
+      }
+      return reroutedSize;
+    }
   }
-  return res;
+  return origSize;
 }
 
 
@@ -2501,8 +2546,12 @@ void nextShortName(char *nameBuffer)
 }
 
 
-BOOL SetUpBSAMap()
+BOOL SetUpBSAMap(bool fallout)
 {
+  if (fallout) {
+    LOGDEBUG("will apply fallout specific workaround");
+  }
+
   std::wostringstream archiveFileName;
   archiveFileName << modInfo->getProfilePath() << L"\\archives.txt";
 
@@ -2528,6 +2577,9 @@ BOOL SetUpBSAMap()
 
     Logger::Instance().info("\"%s\" maps to \"%s\"", shortName, buffer);
     bsaMap[shortName] = buffer;
+    if (fallout) {
+      usedBSAList.insert(ToLower(buffer));
+    }
     if (!first) {
       bsaResourceList.append(",");
     } else {
@@ -2554,7 +2606,7 @@ void SetUpBlacklist()
 
     blacklistFile.close();
   } else {
-    std::list<std::string> temp = { "steam.exe", "chrome.exe", "firefox.exe" };
+    std::list<std::string> temp = { "steam.exe", "steamerrorreporter.exe", "chrome.exe", "firefox.exe", "opera.exe" };
     processBlacklist = std::set<std::string>(temp.begin(), temp.end());
   }
 }
@@ -2588,7 +2640,10 @@ void writeMiniDump(PEXCEPTION_POINTERS exceptionPtrs)
     FuncMiniDumpWriteDump funcDump = (FuncMiniDumpWriteDump)::GetProcAddress(dbgDLL, "MiniDumpWriteDump");
     if (funcDump) {
       wchar_t dmpPath[MAX_PATH_UNICODE];
-      ::GetModuleFileNameW(dllModule, dmpPath, MAX_PATH_UNICODE);
+      if (::GetModuleFileNameW(dllModule, dmpPath, MAX_PATH_UNICODE) == 0) {
+        Logger::Instance().error("No crash dump created, failed to determine destination directory. errorcode: %lu", ::GetLastError());
+        return;
+      }
       wcscat(dmpPath, L".dmp");
 
       HANDLE dumpFile = ::CreateFileW_reroute(dmpPath,
@@ -2650,14 +2705,6 @@ LONG WINAPI VEHandler(PEXCEPTION_POINTERS exceptionPtrs)
       Logger::Instance().info("Windows Exception (%x). Last hooked call: %s",
                               exceptionPtrs->ExceptionRecord->ExceptionCode, s_LastFunction);
     }
-/*
-    if (exceptionPtrs->ExceptionRecord->ExceptionCode != 0xC0000005) {
-      // don't want to break on non-critical errors. The above block didn't work well, crashes
-      // happened for exceptions that wouldn't have been a problem
-      return EXCEPTION_CONTINUE_SEARCH;
-    }*/
-
-    Logger::Instance().error("Windows Exception (%x). Last hooked call: %s", exceptionPtrs->ExceptionRecord->ExceptionCode, s_LastFunction);
 
     if (exceptionPtrs->ExceptionRecord->ExceptionCode == 0xC0000005) {
       Logger::Instance().error("This is a critical error, the application will probably crash now.");
@@ -2704,8 +2751,9 @@ BOOL Init(int logLevel, const wchar_t *profileName)
 
   sLogLevel = logLevel;
 
-  wchar_t mutexName[100];
+  wchar_t mutexName[101];
   _snwprintf(mutexName, 100, L"mo_dll_%d", ::GetCurrentProcessId());
+  mutexName[100] = '\0';
   instanceMutex = ::CreateMutexW(nullptr, FALSE, mutexName);
   if ((instanceMutex == nullptr) || (::GetLastError() == ERROR_ALREADY_EXISTS)) {
     return TRUE;
@@ -2713,7 +2761,11 @@ BOOL Init(int logLevel, const wchar_t *profileName)
 
   wchar_t pathBuffer[MAX_PATH_UNICODE];
   {
-    ::GetModuleFileNameW(dllModule, pathBuffer, MAX_PATH_UNICODE);
+    if (::GetModuleFileNameW(dllModule, pathBuffer, MAX_PATH_UNICODE) == 0) {
+      MessageBox(nullptr, TEXT("failed to determine mo path"), TEXT("initialisation failed"), MB_OK);
+      return TRUE;
+    }
+
     wchar_t *temp = wcsrchr(pathBuffer, L'\\');
     if (temp != nullptr) {
       *temp = L'\0';
@@ -2787,6 +2839,10 @@ BOOL Init(int logLevel, const wchar_t *profileName)
   ::GetModuleFileNameW(nullptr, filename, MAX_PATH);
   Logger::Instance().info("injecting to %ls", filename);
 
+  LPCWSTR baseName = ::GetBaseName(filename);
+
+  bool fallout = StartsWith(baseName, L"fallout");
+
   if (!SetUp(iniName.str(), profileName, moPath, moDataPath)) {
     Logger::Instance().error("failed to set up");
     return FALSE;
@@ -2800,11 +2856,10 @@ BOOL Init(int logLevel, const wchar_t *profileName)
     }
   }
 
-  if (!SetUpBSAMap()) {
+  if (!SetUpBSAMap(fallout)) {
     Logger::Instance().error("failed to set up list of bsas");
     return FALSE;
   }
-
   SetUpBlacklist();
 
   {
