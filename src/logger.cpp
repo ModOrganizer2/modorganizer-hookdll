@@ -107,11 +107,16 @@ void Logger::wrapUpLog()
     FILETIME fileTime;
     ::GetFileTime(testHandle, &fileTime, nullptr, nullptr);
     SYSTEMTIME time;
-    FileTimeToSystemTime(&fileTime, &time);
     TCHAR localDate[255];
     TCHAR localTime[255];
-    ::GetDateFormat(LOCALE_USER_DEFAULT, 0, &time, TEXT("yy'_'MM'_'dd"), localDate, 255);
-    ::GetTimeFormat(LOCALE_USER_DEFAULT, 0, &time, TEXT("HH'_'mm"), localTime, 255);
+    if (::FileTimeToSystemTime(&fileTime, &time)) {
+      ::GetDateFormat(LOCALE_USER_DEFAULT, 0, &time, TEXT("yy'_'MM'_'dd"), localDate, 255);
+      ::GetTimeFormat(LOCALE_USER_DEFAULT, 0, &time, TEXT("HH'_'mm"), localTime, 255);
+    }
+    else {
+      _sntprintf_s(localDate, 255, TEXT("??"));
+      _sntprintf_s(localTime, 255, TEXT("??"));
+    }
 
     std::basic_string<TCHAR> targetName = m_LogPath.substr(0, m_LogPath.length() - 4)
                                                    .append(TEXT("_"))

@@ -39,6 +39,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include <fstream>
 #include <sstream>
 #include <algorithm>
+#include <boost/scoped_array.hpp>
 
 
 using namespace MOShared;
@@ -144,7 +145,6 @@ ModInfo::ModInfo(const std::wstring &profileName, bool enableHiding, const std::
       if (*regPath.rbegin() == '\\') {
         regPath.resize(regPath.size() - 1);
       }
-      Logger::Instance().info("%ls vs %ls", m_DataPathAbsoluteW.c_str(), regPath.c_str());
       if (!PathStartsWith(m_DataPathAbsoluteW.c_str(), regPath.c_str())) {
         regPath.append(L"\\data");
         wchar_t temp[MAX_PATH];
@@ -305,32 +305,49 @@ bool ModInfo::detectOverwriteChange()
 std::wstring ModInfo::reverseReroute(const std::wstring &path, bool *rerouted)
 {
   std::wstring result;
-  wchar_t temp[MAX_PATH];
-  Canonicalize(temp, path.c_str(), MAX_PATH);
-  if (PathStartsWith(temp, m_ModsPath.c_str())) {
-    wchar_t *relPath = temp + m_ModsPath.length();
-    if (*relPath != L'\0') relPath += 1;
+  size_t length = path.length() * 2;
+  boost::scoped_array<wchar_t> temp(new wchar_t[length]);
+  Canonicalize(temp.get(), path.c_str(), length);
+  if (PathStartsWith(temp.get(), m_ModsPath.c_str())) {
+    // path points to a mod
+    wchar_t *relPath = temp.get() + m_ModsPath.length();
+    if (*relPath != L'\0') {
+      relPath += 1;
+    }
     // skip the mod name
     relPath = wcschr(relPath, L'\\');
 
     if (relPath != nullptr) {
-      Canonicalize(temp, (m_DataPathAbsoluteW + relPath).c_str());
-      result.assign(temp);
+      std::wstring combined = m_DataPathAbsoluteW + L"\\" + relPath;
+      boost::scoped_array<wchar_t> reroutedPath(new wchar_t[combined.length() * 2]);
+      Canonicalize(reroutedPath.get(), combined.c_str());
+      result.assign(reroutedPath.get());
     } else {
       result = m_DataPathAbsoluteW;
     }
 
-    if (rerouted != nullptr) *rerouted = true;
-  } else if (PathStartsWith(temp, m_OverwritePathW.c_str())) {
-    wchar_t *relPath = temp + m_OverwritePathW.length();
+    if (rerouted != nullptr) {
+      *rerouted = true;
+    }
+  } else if (PathStartsWith(temp.get(), m_OverwritePathW.c_str())) {
+    // path points to reroute directory
+    wchar_t *relPath = temp.get() + m_OverwritePathW.length();
     if (*relPath != L'\0') relPath += 1;
-    Canonicalize(temp, (m_DataPathAbsoluteW + L"\\" + relPath).c_str());
-    result.assign(temp);
 
-    if (rerouted != nullptr) *rerouted = true;
+    std::wstring combined = m_DataPathAbsoluteW + L"\\" + relPath;
+    boost::scoped_array<wchar_t> reroutedPath(new wchar_t[combined.length() * 2]);
+    Canonicalize(reroutedPath.get(), combined.c_str());
+    result.assign(reroutedPath.get());
+
+    if (rerouted != nullptr) {
+      *rerouted = true;
+    }
   } else {
-    result.assign(temp);
-    if (rerouted != nullptr) *rerouted = false;
+    // not rerouted, returns the unmodified path
+    result.assign(path);
+    if (rerouted != nullptr) {
+      *rerouted = false;
+    }
   }
   return result;
 }
@@ -487,8 +504,12 @@ void ModInfo::addModFile(LPCWSTR originName, const std::wstring &fileName)
   SYSTEMTIME now;
   GetSystemTime(&now);
   FILETIME time;
-  SystemTimeToFileTime(&now, &time);
-  m_DirectoryStructure.insertFile(fileName.substr(offset), origin, time);
+  if (SystemTimeToFileTime(&now, &time)) {
+    m_DirectoryStructure.insertFile(fileName.substr(offset), origin, time);
+  }
+  else {
+    Logger::Instance().error("failed to determine file time for %ls", fileName.c_str());
+  }
 }
 
 

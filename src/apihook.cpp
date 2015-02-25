@@ -64,10 +64,10 @@ LPVOID MyGetProcAddress(HMODULE module, LPCSTR functionName)
 
         HMODULE forwardLib = ::LoadLibraryA(forwardLibName);
         LPVOID forward = nullptr;
-        if (forwardLib) {
+        if (forwardLib != nullptr) {
           forward = MyGetProcAddress(forwardLib, forwardFunctionName);
+          ::FreeLibrary(forwardLib);
         }
-        ::FreeLibrary(forwardLib);
         return forward;
       }
       return (void*)((BYTE*)module + funcAddr[nameOrdinals[i]]);

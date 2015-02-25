@@ -1019,6 +1019,7 @@ static bool identifyAndManipulate(DWORD *pos, DWORD size)
     case 1: function = pushModECX; break;
     case 2: function = pushModEDX; break;
     case 3: function = pushModEBX; break;
+    default: return false;
   }
 
   size_t funcSize = getSnippetSize(function);
@@ -1643,6 +1644,7 @@ BOOL WINAPI CreateHardLinkW_rep(LPCWSTR lpFileName, LPCWSTR lpExistingFileName,
   if (destID != -1) {
     wchar_t driveRoot[4];
     _snwprintf(driveRoot, 4, L"%c:\\", 'A' + destID);
+    driveRoot[3] = L'\0';
     ::GetVolumeInformationW(driveRoot, nullptr, 0, nullptr, nullptr, nullptr, fsName, 10);
   }
 
