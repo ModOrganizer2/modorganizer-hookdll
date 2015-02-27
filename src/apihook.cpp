@@ -213,7 +213,7 @@ static std::wstring GetSectionName(PVOID address)
 
 
 
-size_t ApiHook::CreateReroute(LPBYTE original)
+size_t ApiHook::CreateReroute(LPBYTE &hookInsertionAddress)
 {
   size_t size = 0;
   size_t relativeAdd = 0;
@@ -221,10 +221,25 @@ size_t ApiHook::CreateReroute(LPBYTE original)
   PBYTE curPos = _fdisasm.GetEnd();
   Disasm disasm = _fdisasm.GetDisasm();
   // Calculate how many instructions need to be moved
+
+  PBYTE preHookJumpTarget = NULL;
+
   while (size < sizeof(jump)) {
     if ((size == 0) && (disasm.GetOpcode() == 0xE9)) {
       LOGDEBUG("%s seems to be hooked already: %ls",
                _functionName, ::GetSectionName(disasm.GetAbsoluteDestination()).c_str());
+      preHookJumpTarget = disasm.GetAbsoluteDestination();
+    } else if ((size == 0) && (disasm.GetOpcode() == 0xEB)) {
+      // short jump, may be a hot-patch
+      PBYTE pos = disasm.GetAbsoluteDestination();
+      Disasm refDisasm(pos);
+      if (refDisasm.GetOpcode() == 0xE9) {
+        // aha, it IS a hot patch
+        LOGDEBUG("%s seems to be hooked already (hot-patch): %ls",
+                 _functionName, ::GetSectionName(refDisasm.GetAbsoluteDestination()).c_str());
+        hookInsertionAddress = pos;
+        preHookJumpTarget = refDisasm.GetAbsoluteDestination();
+      }
     }
     if (disasm.IsRelative()) {
       relativeAdd += 3 + sizeof(void*);  // if the jump is relative or near, it will have to
@@ -234,18 +249,21 @@ size_t ApiHook::CreateReroute(LPBYTE original)
     num++;
     curPos = disasm.GetNextCommand();
   }
-  int tmpnum = num;
-  size_t tmpsize = size;
-  // Continue copying operations if a jump follows that targets the already to-be-copied area
-  while (curPos < _fdisasm.GetEnd()) {
-    tmpnum++;
-    tmpsize += disasm.GetSize();
-    if (disasm.JumpTargets(original, original + size)) {
-      num = tmpnum;
-      size = tmpsize;
+
+  if (preHookJumpTarget == NULL) {
+    int tmpnum = num;
+    size_t tmpsize = size;
+    // Continue copying operations if a jump follows that targets the already to-be-copied area
+    while (curPos < _fdisasm.GetEnd()) {
+      tmpnum++;
+      tmpsize += disasm.GetSize();
+      if (disasm.JumpTargets(hookInsertionAddress, hookInsertionAddress + size)) {
+        num = tmpnum;
+        size = tmpsize;
+      }
+      curPos = disasm.GetNextCommand();
     }
-    curPos = disasm.GetNextCommand();
-  }
+  } // no need to fix jumps
 
   size_t jlen = sizeof(void*) + 1;          // size of a jump: 1 byte opcode + size of an address
 
@@ -256,31 +274,40 @@ size_t ApiHook::CreateReroute(LPBYTE original)
                                       PAGE_EXECUTE_READWRITE));
 
   LPBYTE rerouteEnd = _reroute;
-  disasm.Reset();
 
-  // Copy instructions and adjust relative jumps if neccessary
-  for (int i = 0; i < num; i++) {
-    rerouteEnd = disasm.CopyTo(rerouteEnd, original, size);
-    disasm.GetNextCommand();
-  }
+  if (preHookJumpTarget == NULL) {
+    disasm.Reset();
+    // Copy instructions and adjust relative jumps if neccessary
+    for (int i = 0; i < num; i++) {
+      rerouteEnd = disasm.CopyTo(rerouteEnd, hookInsertionAddress, size);
+      disasm.GetNextCommand();
+    }
+  } // no need to copy instructions
 
-  // Add jump back to original function
+  // Add jump back to original function or the next hook in the chain
   *rerouteEnd = 0xE9;          // JMP
   ++rerouteEnd;
-  *(reinterpret_cast<ULONG*>(rerouteEnd)) =
-          reinterpret_cast<ULONG>(original) + size -
-          (reinterpret_cast<ULONG>(rerouteEnd) + sizeof(ULONG));   // Distance to original function
+  if (preHookJumpTarget == NULL) {
+    *(reinterpret_cast<ULONG*>(rerouteEnd)) =
+            reinterpret_cast<ULONG>(hookInsertionAddress) + size -
+            (reinterpret_cast<ULONG>(rerouteEnd) + sizeof(ULONG));   // Distance to original function
+  } else {
+    *(reinterpret_cast<ULONG*>(rerouteEnd)) =
+            reinterpret_cast<ULONG>(preHookJumpTarget) -
+            (reinterpret_cast<ULONG>(rerouteEnd) + sizeof(ULONG));   // Distance to original function
+  }
 
   return size;
 }
 
 BOOL ApiHook::InsertHook(LPVOID original, LPVOID replacement)
 {
-  _bytesMoved = CreateReroute(reinterpret_cast<LPBYTE>(original));
+  LPBYTE hookInsertionAddress = reinterpret_cast<LPBYTE>(original);
+  _bytesMoved = CreateReroute(hookInsertionAddress);
 
   DWORD oldprotect, ignore;
   // Set the target function to copy on write, so we don't modify code for other processes
-  if (!::VirtualProtect(original,
+  if (!::VirtualProtect(hookInsertionAddress,
                         sizeof(jump),
                         PAGE_EXECUTE_WRITECOPY,
                         &oldprotect)) {
@@ -288,11 +315,15 @@ BOOL ApiHook::InsertHook(LPVOID original, LPVOID replacement)
   }
 
   // Copy the jump instruction to the target address and insert the reroute addresses
-  memmove(original, &jump, sizeof(jump));
-  AddrReplace(reinterpret_cast<LPBYTE>(original), 0xBBBBBBBB, replacement, sizeof(jump), TRUE);
+  memmove(hookInsertionAddress, &jump, sizeof(jump));
+  AddrReplace(hookInsertionAddress, 0xBBBBBBBB, replacement, sizeof(jump), TRUE);
+
+  // update "origpos" to point to the place where we actually inserted the jump so it can be removed
+  // correctly
+  _origPos = hookInsertionAddress;
 
   // restore old memory protection
-  if (!::VirtualProtect(original, sizeof(jump), oldprotect, &ignore)) {
+  if (!::VirtualProtect(hookInsertionAddress, sizeof(jump), oldprotect, &ignore)) {
     throw MOShared::windows_error("failed to restore virtual protection");
   }
 

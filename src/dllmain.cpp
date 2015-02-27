@@ -2875,6 +2875,7 @@ BOOL Init(int logLevel, const wchar_t *profileName)
   }
 
   Logger::Instance().info("injection done");
+
   return TRUE;
 }
 

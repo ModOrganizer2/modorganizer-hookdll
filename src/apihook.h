@@ -50,19 +50,19 @@ private:
 	///	based on the absolute address "addr" and the location of the pattern */
 	void AddrReplace(LPBYTE start, ULONG pattern, LPVOID addr, size_t size, BOOL relative_adjust);
 
-	/// Create the reroute function
-	/// \param	original	unmodified original function to copy instructions from
-	/// \param	minSize		minimum number of bytes to be moved
-	/// \return	number of bytes actually moved from original
-	///					original + return-value therefore returns the address of
-	///					the first instruction that has not been moved */
-	size_t CreateReroute(LPBYTE original, size_t minSize);
+  /// Create the reroute function
+  /// \param hookInsertionAddress (in&out) address we intend to insert our hook. On call this should
+  ///        contain the function address, on return it may be adjusted to a better place where we
+  ///        the jump can be inserted
+  /// \return	number of bytes actually moved from original
+  ///					original + return-value therefore returns the address of
+  ///					the first instruction that has not been moved */
+  size_t CreateReroute(LPBYTE &hookInsertionAddress);
 
 	BOOL Hook(LPVOID original, LPVOID replacement);
 
   void RemoveHook();
 
-	size_t CreateReroute(LPBYTE origina);
 	BOOL InsertHook(LPVOID original, LPVOID replacement);
 
 	BOOL IsFunctionEnd(const Disasm &dis);
@@ -70,7 +70,7 @@ private:
 private:
 
   bool _installed;
-	LPBYTE _reroute;
+  LPBYTE _reroute;
 	const TCHAR *_moduleName;
 	const char *_functionName;
 	FuncDisasm _fdisasm;
