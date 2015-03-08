@@ -1,0 +1,68 @@
+Import('qt_env')
+
+env = qt_env.Clone()
+
+env['CPPPATH'] += [
+    '$BOOST_PATH',
+]
+
+env.AppendUnique(LIBPATH = [
+    '..\\shared',
+    '..\\bsatk',
+    '$ZLIB_PATH/build'
+])
+
+env.AppendUnique(LIBS = [
+    'mo_shared',
+    'bsatk',
+    'zlibstatic',
+    'kernel32',
+    'user32',
+    'shell32',
+    'advapi32',
+    'shlwapi',
+    'Version'
+])
+
+#OTHER_FILES += \
+#    version.rc \
+
+#RC_FILE += \
+#  version.rc
+
+env.AppendUnique(CPPPATH = [
+    '..\\shared',
+    '..\\bsatk'
+])
+
+#CONFIG(debug, debug|release) {
+#  LIBS += -L$$OUT_PWD/../shared/debug -L$$OUT_PWD/../bsatk/debug
+#  LIBS += -lDbgHelp
+#  DEFINES += DEBUG
+#  PRE_TARGETDEPS += $$OUT_PWD/../shared/debug/mo_shared.lib \
+#    $$OUT_PWD/../bsatk/debug/bsatk.lib
+#} else {
+#  LIBS += -L$$OUT_PWD/../shared/release -L$$OUT_PWD/../bsatk/release
+#  QMAKE_CXXFLAGS += /GL /GS-
+#  QMAKE_LFLAGS += /DEBUG /INCREMENTAL:NO /LTCG /OPT:REF /OPT:ICF
+#  PRE_TARGETDEPS += $$OUT_PWD/../shared/release/mo_shared.lib \
+#    $$OUT_PWD/../bsatk/release/bsatk.lib
+#
+#}
+
+env.AppendUnique(CPPDEFINES = [
+        'UNICODE',
+        '_UNICODE',
+        '_CRT_SECURE_NO_WARNINGS',
+        '_WINDLL',
+        'DEBUG_LOG'
+])
+
+env['WARNING_LEVEL'] = 4
+
+lib = env.SharedLibrary('hook', env.Glob('*.cpp') + env.RES('version.rc'))
+# Extract dll and pdb only
+env.Install(env['INSTALL_PATH'], [
+    lib[0],
+    env.File('process_blacklist.txt'),
+])
