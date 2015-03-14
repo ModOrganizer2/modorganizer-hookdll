@@ -24,12 +24,6 @@ env.AppendUnique(LIBS = [
     'Version'
 ])
 
-#OTHER_FILES += \
-#    version.rc \
-
-#RC_FILE += \
-#  version.rc
-
 env.AppendUnique(CPPPATH = [
     '..\\shared',
     '..\\bsatk'
@@ -51,7 +45,6 @@ env.AppendUnique(CPPPATH = [
 #}
 
 env.AppendUnique(CPPDEFINES = [
-        'UNICODE',
         '_UNICODE',
         '_CRT_SECURE_NO_WARNINGS',
         '_WINDLL',
@@ -61,8 +54,14 @@ env.AppendUnique(CPPDEFINES = [
 env['WARNING_LEVEL'] = 4
 
 lib = env.SharedLibrary('hook', env.Glob('*.cpp') + env.RES('version.rc'))
-# Extract dll and pdb only
+# FIXME scons bug doesn't provide pdb for executable.
+if env['CONFIG'] == 'debug':
+    x = env.File('hook.pdb')
+    env.Depends(x, lib)
+    lib.append(x)
+env.Depends(lib, env.Value(env['ENV']['DLLSPATH']))
+
 env.Install(env['INSTALL_PATH'], [
-    lib[0],
+    filter(lambda x: str(x).endswith('.dll') or str(x).endswith('.pdb'), lib),
     env.File('process_blacklist.txt'),
 ])
