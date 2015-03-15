@@ -2,14 +2,10 @@ Import('qt_env')
 
 env = qt_env.Clone()
 
-env['CPPPATH'] += [
-    '$BOOST_PATH',
-]
-
 env.AppendUnique(LIBPATH = [
     '..\\shared',
     '..\\bsatk',
-    '$ZLIB_PATH/build'
+    '${ZLIB_PATH}\\build'
 ])
 
 env.AppendUnique(LIBS = [
@@ -25,6 +21,7 @@ env.AppendUnique(LIBS = [
 ])
 
 env.AppendUnique(CPPPATH = [
+    '${BOOST_PATH}',
     '..\\shared',
     '..\\bsatk'
 ])
@@ -54,14 +51,8 @@ env.AppendUnique(CPPDEFINES = [
 env['WARNING_LEVEL'] = 4
 
 lib = env.SharedLibrary('hook', env.Glob('*.cpp') + env.RES('version.rc'))
-# FIXME scons bug doesn't provide pdb for executable.
-if env['CONFIG'] == 'debug':
-    x = env.File('hook.pdb')
-    env.Depends(x, lib)
-    lib.append(x)
-env.Depends(lib, env.Value(env['ENV']['DLLSPATH']))
 
 env.Install(env['INSTALL_PATH'], [
     filter(lambda x: str(x).endswith('.dll') or str(x).endswith('.pdb'), lib),
-    env.File('process_blacklist.txt'),
+    'process_blacklist.txt',
 ])
