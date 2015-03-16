@@ -51,8 +51,5 @@ env.AppendUnique(CPPDEFINES = [
 env['WARNING_LEVEL'] = 4
 
 lib = env.SharedLibrary('hook', env.Glob('*.cpp') + env.RES('version.rc'))
-
-env.Install(env['INSTALL_PATH'], [
-    filter(lambda x: str(x).endswith('.dll') or str(x).endswith('.pdb'), lib),
-    'process_blacklist.txt',
-])
+env.InstallModule(lib)
+env.Install(env['INSTALL_PATH'], 'process_blacklist.txt')
