@@ -5,7 +5,7 @@ env = env.Clone()
 env.AppendUnique(LIBPATH = [
     '..\\shared',
     '..\\bsatk',
-    '${ZLIB_PATH}\\build'
+    '${ZLIBPATH}\\build'
 ])
 
 env.AppendUnique(LIBS = [
@@ -21,7 +21,7 @@ env.AppendUnique(LIBS = [
 ])
 
 env.AppendUnique(CPPPATH = [
-    '${BOOST_PATH}',
+    '${BOOSTPATH}',
     '..\\shared',
     '..\\bsatk'
 ])
