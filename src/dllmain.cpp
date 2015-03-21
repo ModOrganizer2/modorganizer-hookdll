@@ -720,9 +720,10 @@ BOOL WINAPI MoveFileExW_rep(LPCWSTR lpExistingFileName, LPCWSTR lpNewFileName, D
   modInfo->getFullPathName(lpNewFileName, fullDestinationName, MAX_PATH);
 
   // source file definitively needs to be rerouted if it originates from the fake directory
-  bool rerouted = false;
+  bool sourceRerouted = false;
+  bool destinationRerouted = false;
   int originID = -1;
-  std::wstring sourceReroute = modInfo->getRerouteOpenExisting(fullSourceName, false, &rerouted, &originID);
+  std::wstring sourceReroute = modInfo->getRerouteOpenExisting(fullSourceName, false, &sourceRerouted, &originID);
   std::wstring destinationReroute = fullDestinationName;
 
   if (PathStartsWith(fullDestinationName, modInfo->getDataPathW().c_str())) {
@@ -734,7 +735,7 @@ BOOL WINAPI MoveFileExW_rep(LPCWSTR lpExistingFileName, LPCWSTR lpNewFileName, D
     std::wostringstream temp;
     if (!destinationReroute.empty()) {
       // In the "create tmp, remove original, move tmp to original"-sequence we'd rather have the modified file in the original location.
-    } else if (rerouted && (originID != -1)) {
+    } else if (sourceRerouted && (originID != -1)) {
       // source file is rerouted, destination file would be in data. use the same directory instead
       FilesOrigin origin = modInfo->getFilesOrigin(originID);
       temp << origin.getPath() << "\\" << (fullDestinationName + modInfo->getDataPathW().length() + 1);
@@ -744,8 +745,10 @@ BOOL WINAPI MoveFileExW_rep(LPCWSTR lpExistingFileName, LPCWSTR lpNewFileName, D
       temp << modInfo->getOverwritePath() << "\\" << (fullDestinationName + modInfo->getDataPathW().length() + 1);
       destinationReroute = temp.str();
     }
+    destinationRerouted = true;
   } else if (LPCWSTR sPos = wcswcs(fullDestinationName, AppConfig::localSavePlaceholder())) {
     destinationReroute = modInfo->getProfilePath() + L"\\saves\\" + (sPos + wcslen(AppConfig::localSavePlaceholder()));
+    destinationRerouted = true;
   }
 
   { // create intermediate directories
@@ -754,9 +757,16 @@ BOOL WINAPI MoveFileExW_rep(LPCWSTR lpExistingFileName, LPCWSTR lpNewFileName, D
   }
 
   BOOL res = MoveFileExW_reroute(sourceReroute.c_str(), destinationReroute.c_str(), dwFlags);
-  modInfo->removeModFile(fullSourceName);
-
   if (res) {
+    if (sourceRerouted) {
+      modInfo->removeModFile(fullSourceName);
+    }
+    if (destinationRerouted) {
+      modInfo->addModFile(destinationReroute.c_str());
+    }
+  }
+
+  if (sourceRerouted) {
     LOGDEBUG("move (ex) %ls to %ls - %d (%lu)", lpExistingFileName, lpNewFileName, res, ::GetLastError());
   }
 
