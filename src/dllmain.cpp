@@ -748,7 +748,8 @@ BOOL WINAPI MoveFileExW_rep(LPCWSTR lpExistingFileName, LPCWSTR lpNewFileName, D
     destinationRerouted = true;
   } else if (LPCWSTR sPos = wcswcs(fullDestinationName, AppConfig::localSavePlaceholder())) {
     destinationReroute = modInfo->getProfilePath() + L"\\saves\\" + (sPos + wcslen(AppConfig::localSavePlaceholder()));
-    destinationRerouted = true;
+    // destinationRerouted is not set here because then we would try to add the mod file to the
+    // directory structure which doesn't make sense for saves
   }
 
   { // create intermediate directories
