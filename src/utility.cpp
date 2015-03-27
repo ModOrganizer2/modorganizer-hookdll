@@ -71,17 +71,20 @@ bool PathStartsWith(LPCSTR string, LPCSTR subString)
 
 bool PathStartsWith(LPCWSTR string, LPCWSTR subString)
 {
-  size_t len = wcslen(subString);
-  if (wcslen(string) < len) {
-    return false;
-  }
-
-  for (size_t i = 0; i < len; ++i) {
-    if (towlower(string[i]) != towlower(subString[i])) {
+  while ((*string != L'\0') && (*subString != L'\0')) {
+    if (towlower(*(string++)) != towlower(*(subString++))) {
       return false;
     }
   }
-  return (string[len] == L'\0') || (string[len] == L'/') || (string[len] == L'\\');
+
+  if ((*string == L'\0') && (*subString != L'\0')) {
+    // string shorter than substring
+    return false;
+  }
+
+  // true if string == substring or if string is now at a path separator OR if substring ended on a path separator (which was matched by string)
+  return (*string == L'\0') || (*string == L'/') || (*string == L'\\')
+      || (*(subString - 1) == L'/') || (*(subString - 1) == L'/');
 }
 
 bool StartsWith(LPCSTR string, LPCSTR subString)
@@ -169,7 +172,7 @@ LPCSTR GetBaseName(LPCSTR string)
 LPCWSTR GetBaseName(LPCWSTR string)
 {
   LPCWSTR result;
-  if ((string == NULL) || (string[0] == L'\0')) {
+  if ((string == nullptr) || (string[0] == L'\0')) {
     result = string;
   } else {
     result = string + wcslen(string) - 1;
@@ -232,7 +235,7 @@ void Canonicalize(LPWSTR destination, LPCWSTR source, size_t bufferSize)
 
 const wchar_t *wcsrpbrk(const wchar_t *string, const wchar_t *control)
 {
-  const wchar_t *lastPos = NULL;
+  const wchar_t *lastPos = nullptr;
   while (*string != L'\0') {
     const wchar_t *iter = control;
     while (*iter != L'\0') {

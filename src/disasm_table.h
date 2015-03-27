@@ -39,7 +39,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #define OPT_CGROUP			17	// operand type is decided by group
 
 // Operand sizes
-#define OPS_NULL				0	// no operand
+#define OPS_nullptr				0	// no operand
 #define OPS_BOUND				1	// special case bound: double word or quad word
 #define OPS_BYTE				2	// one byte
 #define OPS_WORD				3	// one word (= 2 byte)

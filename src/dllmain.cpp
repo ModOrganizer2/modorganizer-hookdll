@@ -58,6 +58,11 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #endif // LEAK_CHECK_WITH_VLD
 
 
+
+#include <Windows.h>
+#include <Shlwapi.h>
+#include <ShlObj.h>
+
 using namespace MOShared;
 
 
@@ -114,14 +119,15 @@ GetFullPathNameW_type GetFullPathNameW_reroute = GetFullPathNameW;
 SHFileOperationA_type SHFileOperationA_reroute = SHFileOperationA;
 SHFileOperationW_type SHFileOperationW_reroute = SHFileOperationW;
 GetFileVersionInfoW_type GetFileVersionInfoW_reroute = GetFileVersionInfoW;
-GetFileVersionInfoExW_type GetFileVersionInfoExW_reroute = NULL; // not available on windows xp
+GetFileVersionInfoExW_type GetFileVersionInfoExW_reroute = nullptr; // not available on windows xp
 GetFileVersionInfoSizeW_type GetFileVersionInfoSizeW_reroute = GetFileVersionInfoSizeW;
+GetModuleFileNameA_type GetModuleFileNameA_reroute = GetModuleFileNameA;
 GetModuleFileNameW_type GetModuleFileNameW_reroute = GetModuleFileNameW;
 
 NtQueryDirectoryFile_type NtQueryDirectoryFile_reroute;
 
 
-ModInfo *modInfo = NULL;
+ModInfo *modInfo = nullptr;
 
 std::map<std::pair<int, DWORD>, bool> skipMap;
 
@@ -131,16 +137,14 @@ std::set<std::string> usedBSAList;
 
 std::set<std::string> iniFilesA;
 
-std::wstring moPath;
-
 // processes we never want to hook
 std::set<std::string> processBlacklist;
 
 static const int MAX_PATH_UNICODE = 256;
 
 HANDLE instanceMutex = INVALID_HANDLE_VALUE;
-HMODULE dllModule = NULL;
-PVOID exceptionHandler = NULL;
+HMODULE dllModule = nullptr;
+PVOID exceptionHandler = nullptr;
 
 boost::mutex queryMutex;
 std::map<HANDLE, std::wstring> directoryCFHandles;
@@ -208,10 +212,10 @@ BOOL WINAPI CreateProcessA_rep(LPCSTR lpApplicationName,
   DWORD flags = dwCreationFlags | CREATE_SUSPENDED;
   bool blacklisted = false;
 
-  if (lpApplicationName != NULL) {
+  if (lpApplicationName != nullptr) {
     char buffer[MAX_PATH];
-    LPSTR filePart = NULL;
-    if ((::GetFullPathNameA(lpApplicationName, MAX_PATH, buffer, &filePart) != 0) && (filePart != NULL)) {
+    LPSTR filePart = nullptr;
+    if ((::GetFullPathNameA(lpApplicationName, MAX_PATH, buffer, &filePart) != 0) && (filePart != nullptr)) {
       for (char *pos = filePart; *pos != '\0'; ++pos) {
         *pos = tolower(*pos);
       }
@@ -222,19 +226,19 @@ BOOL WINAPI CreateProcessA_rep(LPCSTR lpApplicationName,
   }
 
   LOGDEBUG("create process (a) %s - %s (in %s) - %s",
-           lpApplicationName != NULL ? lpApplicationName : "null",
-           lpCommandLine != NULL ? lpCommandLine : "null",
-           lpCurrentDirectory != NULL ? lpCurrentDirectory : "null",
-           blacklisted ? "blacklisted" : "hooking");
+           lpApplicationName != nullptr ? lpApplicationName : "null",
+           lpCommandLine != nullptr ? lpCommandLine : "null",
+           lpCurrentDirectory != nullptr ? lpCurrentDirectory : "null",
+           blacklisted ? "NOT hooking" : "hooking");
 
   std::string reroutedCwd;
-  if (lpCurrentDirectory != NULL) {
+  if (lpCurrentDirectory != nullptr) {
     reroutedCwd = modInfo->getRerouteOpenExisting(lpCurrentDirectory);
   }
 
   if (!::CreateProcessA_reroute(lpApplicationName, lpCommandLine, lpProcessAttributes,
         lpThreadAttributes, bInheritHandles, flags, lpEnvironment,
-        lpCurrentDirectory != NULL ? reroutedCwd.c_str() : NULL,
+        lpCurrentDirectory != nullptr ? reroutedCwd.c_str() : nullptr,
         lpStartupInfo, lpProcessInformation)) {
     LOGDEBUG("process failed to start (%lu)", ::GetLastError());
     return FALSE;
@@ -251,7 +255,7 @@ BOOL WINAPI CreateProcessA_rep(LPCSTR lpApplicationName,
     Logger::Instance().error("failed to inject into %s: %s", lpApplicationName, e.what());
   }
 
-  if (  (!susp) && (::ResumeThread(lpProcessInformation->hThread) == (DWORD)-1)) {
+  if (!susp && (::ResumeThread(lpProcessInformation->hThread) == (DWORD)-1)) {
     Logger::Instance().error("failed to inject into spawned process");
     return FALSE;
   }
@@ -276,10 +280,10 @@ BOOL WINAPI CreateProcessW_rep(LPCWSTR lpApplicationName,
   DWORD flags = dwCreationFlags | CREATE_SUSPENDED;
   bool blacklisted = false;
 
-  if (lpApplicationName != NULL) {
+  if (lpApplicationName != nullptr) {
     wchar_t buffer[MAX_PATH];
-    LPWSTR filePart = NULL;
-    if ((::GetFullPathNameW(lpApplicationName, MAX_PATH, buffer, &filePart) != 0) && (filePart != NULL)) {
+    LPWSTR filePart = nullptr;
+    if ((::GetFullPathNameW(lpApplicationName, MAX_PATH, buffer, &filePart) != 0) && (filePart != nullptr)) {
       for (wchar_t *pos = filePart; *pos != L'\0'; ++pos) {
         *pos = tolower(*pos);
       }
@@ -290,25 +294,25 @@ BOOL WINAPI CreateProcessW_rep(LPCWSTR lpApplicationName,
   }
 
   LOGDEBUG("create process (w) %ls - %ls (in %ls) - %s",
-           lpApplicationName != NULL ? lpApplicationName : L"null",
-           lpCommandLine != NULL ? lpCommandLine : L"null",
-           lpCurrentDirectory != NULL ? lpCurrentDirectory : L"null",
+           lpApplicationName != nullptr ? lpApplicationName : L"null",
+           lpCommandLine != nullptr ? lpCommandLine : L"null",
+           lpCurrentDirectory != nullptr ? lpCurrentDirectory : L"null",
            blacklisted ? "NOT hooking" : "hooking");
 
   std::wstring reroutedApplicationName;
-  if (lpApplicationName != NULL) {
+  if (lpApplicationName != nullptr) {
     reroutedApplicationName = modInfo->getRerouteOpenExisting(lpApplicationName);
     lpApplicationName = reroutedApplicationName.c_str();
   }
 
   std::wstring reroutedCwd;
-  if (lpCurrentDirectory != NULL) {
+  if (lpCurrentDirectory != nullptr) {
     reroutedCwd = modInfo->getRerouteOpenExisting(lpCurrentDirectory);
   }
 
   if (!::CreateProcessW_reroute(lpApplicationName, lpCommandLine, lpProcessAttributes,
         lpThreadAttributes, bInheritHandles, flags, lpEnvironment,
-        lpCurrentDirectory != NULL ? reroutedCwd.c_str() : NULL,
+        lpCurrentDirectory != nullptr ? reroutedCwd.c_str() : nullptr,
         lpStartupInfo, lpProcessInformation)) {
     LOGDEBUG("process failed to start (%lu)", ::GetLastError());
     return FALSE;
@@ -325,7 +329,7 @@ BOOL WINAPI CreateProcessW_rep(LPCWSTR lpApplicationName,
     Logger::Instance().error("failed to inject into %ls: %s", lpApplicationName, e.what());
   }
 
-  if (  (!susp) && (::ResumeThread(lpProcessInformation->hThread) == (DWORD)-1)) {
+  if (!susp && (::ResumeThread(lpProcessInformation->hThread) == (DWORD)-1)) {
     Logger::Instance().error("failed to inject into spawned process");
     return FALSE;
   }
@@ -396,10 +400,10 @@ HANDLE WINAPI CreateFileW_rep(LPCWSTR lpFileName,
     // if the regular call causes an error message and rerouted to overwrite
     rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName, false, &rerouted);
     if (!rerouted && !FileExists_reroute(lpFileName)) {
-      rerouteFilename = GameInfo::instance().getOverwriteDir() + L"\\" + (fullFileName + modInfo->getDataPathW().length());
+      rerouteFilename = modInfo->getOverwritePath() + L"\\" + (fullFileName + modInfo->getDataPathW().length());
 
       std::wstring targetDirectory = rerouteFilename.substr(0, rerouteFilename.find_last_of(L"\\/"));
-      CreateDirectoryRecursive(targetDirectory.c_str(), NULL);
+      CreateDirectoryRecursive(targetDirectory.c_str(), nullptr);
       modInfo->addOverwriteFile(rerouteFilename);
     }
   }
@@ -485,7 +489,7 @@ DWORD WINAPI GetFileAttributesW_rep(LPCWSTR lpFileName)
 {
   PROFILE();
 
-  if ((lpFileName == NULL) || (lpFileName[0] == L'\0')) {
+  if ((lpFileName == nullptr) || (lpFileName[0] == L'\0')) {
     return GetFileAttributesW_reroute(lpFileName);
   }
 
@@ -494,6 +498,13 @@ DWORD WINAPI GetFileAttributesW_rep(LPCWSTR lpFileName)
 
   LPCWSTR baseName = GetBaseName(lpFileName);
   int pathLen = baseName - lpFileName;
+
+  if (usedBSAList.find(ToLower(ToString(baseName, true))) != usedBSAList.end()) {
+    // hide bsa files loaded already through the resource archive list
+    LOGDEBUG("%ls hidden from the game", lpFileName);
+    ::SetLastError(ERROR_FILE_NOT_FOUND);
+    return INVALID_FILE_ATTRIBUTES;
+  }
 
   bool rerouted = false;
 
@@ -570,7 +581,7 @@ HANDLE WINAPI FindFirstFileExW_rep(LPCWSTR lpFileName,
 {
   PROFILE();
 
-  if (HookLock::isLocked(HookLock::FIND_FILE_GROUP) || (lpFileName == NULL)) {
+  if (HookLock::isLocked(HookLock::FIND_FILE_GROUP) || (lpFileName == nullptr)) {
     return FindFirstFileExW_reroute(lpFileName, fInfoLevelId, lpFindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags);
   }
 
@@ -580,10 +591,10 @@ HANDLE WINAPI FindFirstFileExW_rep(LPCWSTR lpFileName,
 
   std::wstring rerouteFilename = lpFileName;
   std::map<std::string, std::string>::iterator bsaName = bsaMap.find(ToString(baseName, true));
-  LPCWSTR sPos = NULL;
+  LPCWSTR sPos = nullptr;
   if (bsaName != bsaMap.end()) {
     rerouteFilename = std::wstring(lpFileName).substr(0, pathLen) + ToWString(bsaName->second, true);
-  } else if ((sPos = wcswcs(lpFileName, AppConfig::localSavePlaceholder())) != NULL) {
+  } else if ((sPos = wcswcs(lpFileName, AppConfig::localSavePlaceholder())) != nullptr) {
     rerouteFilename = modInfo->getProfilePath() + L"\\saves\\" + (sPos + wcslen(AppConfig::localSavePlaceholder()));
   }
   bool rerouted = false;
@@ -652,7 +663,7 @@ BOOL WINAPI CreateDirectoryW_rep(LPCWSTR lpPathName, LPSECURITY_ATTRIBUTES lpSec
     if (!rerouted) {
       // redirect directory creation to overwrite
       std::wostringstream temp;
-      temp << GameInfo::instance().getOverwriteDir() << "\\" << (fullPathName + modInfo->getDataPathW().length());
+      temp << modInfo->getOverwritePath() << "\\" << (fullPathName + modInfo->getDataPathW().length());
       reroutePath = temp.str();
     }
     LOGDEBUG("create directory: %ls -> %ls", lpPathName, reroutePath.c_str());
@@ -671,14 +682,14 @@ BOOL WINAPI DeleteFileW_rep(LPCWSTR lpFileName)
   PROFILE();
   WCHAR buffer[MAX_PATH];
   modInfo->getFullPathName(lpFileName, buffer, MAX_PATH);
-  LPCWSTR sPos = NULL;
+  LPCWSTR sPos = nullptr;
 
   if (PathStartsWith(buffer, modInfo->getDataPathW().c_str())) {
     std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
     modInfo->removeModFile(lpFileName);
     Logger::Instance().info("deleting %ls -> %ls", lpFileName, rerouteFilename.c_str());
     return DeleteFileW_reroute(rerouteFilename.c_str());
-  } else if ((sPos = wcswcs(buffer, AppConfig::localSavePlaceholder())) != NULL) {
+  } else if ((sPos = wcswcs(buffer, AppConfig::localSavePlaceholder())) != nullptr) {
     std::wstring rerouteFilename = modInfo->getProfilePath().append(L"\\saves\\").append(sPos + wcslen(AppConfig::localSavePlaceholder()));
     modInfo->removeModFile(lpFileName);
     Logger::Instance().info("deleting %ls -> %ls", lpFileName, rerouteFilename.c_str());
@@ -709,26 +720,54 @@ BOOL WINAPI MoveFileExW_rep(LPCWSTR lpExistingFileName, LPCWSTR lpNewFileName, D
   modInfo->getFullPathName(lpNewFileName, fullDestinationName, MAX_PATH);
 
   // source file definitively needs to be rerouted if it originates from the fake directory
-  bool rerouted = false;
+  bool sourceRerouted = false;
+  bool destinationRerouted = false;
   int originID = -1;
-  std::wstring sourceReroute = modInfo->getRerouteOpenExisting(fullSourceName, false, &rerouted, &originID);
+  std::wstring sourceReroute = modInfo->getRerouteOpenExisting(fullSourceName, false, &sourceRerouted, &originID);
   std::wstring destinationReroute = fullDestinationName;
 
   if (PathStartsWith(fullDestinationName, modInfo->getDataPathW().c_str())) {
+    destinationReroute = modInfo->getRemovedLocation(fullDestinationName);
+
+    // usually, always move to the overwrite directory. However, in the "create tmp, remove original, move tmp to original"-sequence
+    // we'd rather have the modified file in the original location. If the source file was part of a mod we leave the file in that
+    // mod
     std::wostringstream temp;
-    temp << GameInfo::instance().getOverwriteDir() << "\\" << (fullDestinationName + modInfo->getDataPathW().length() + 1);
-    destinationReroute = temp.str();
+    if (!destinationReroute.empty()) {
+      // In the "create tmp, remove original, move tmp to original"-sequence we'd rather have the modified file in the original location.
+    } else if (sourceRerouted && (originID != -1)) {
+      // source file is rerouted, destination file would be in data. use the same directory instead
+      FilesOrigin origin = modInfo->getFilesOrigin(originID);
+      temp << origin.getPath() << "\\" << (fullDestinationName + modInfo->getDataPathW().length() + 1);
+      destinationReroute = temp.str();
+    } else {
+      // default case - reroute to overwrite
+      temp << modInfo->getOverwritePath() << "\\" << (fullDestinationName + modInfo->getDataPathW().length() + 1);
+      destinationReroute = temp.str();
+    }
+    destinationRerouted = true;
+  } else if (LPCWSTR sPos = wcswcs(fullDestinationName, AppConfig::localSavePlaceholder())) {
+    destinationReroute = modInfo->getProfilePath() + L"\\saves\\" + (sPos + wcslen(AppConfig::localSavePlaceholder()));
+    // destinationRerouted is not set here because then we would try to add the mod file to the
+    // directory structure which doesn't make sense for saves
   }
 
   { // create intermediate directories
     std::wstring targetDirectory = destinationReroute.substr(0, destinationReroute.find_last_of(L"\\/"));
-    CreateDirectoryRecursive(targetDirectory.c_str(), NULL);
+    CreateDirectoryRecursive(targetDirectory.c_str(), nullptr);
   }
 
   BOOL res = MoveFileExW_reroute(sourceReroute.c_str(), destinationReroute.c_str(), dwFlags);
-  modInfo->removeModFile(fullSourceName);
-
   if (res) {
+    if (sourceRerouted) {
+      modInfo->removeModFile(fullSourceName);
+    }
+    if (destinationRerouted) {
+      modInfo->addModFile(destinationReroute.c_str());
+    }
+  }
+
+  if (sourceRerouted) {
     LOGDEBUG("move (ex) %ls to %ls - %d (%lu)", lpExistingFileName, lpNewFileName, res, ::GetLastError());
   }
 
@@ -739,48 +778,7 @@ BOOL WINAPI MoveFileExW_rep(LPCWSTR lpExistingFileName, LPCWSTR lpNewFileName, D
 BOOL WINAPI MoveFileW_rep(LPCWSTR lpExistingFileName, LPCWSTR lpNewFileName)
 {
   PROFILE();
-  WCHAR fullSourceName[MAX_PATH];
-  modInfo->getFullPathName(lpExistingFileName, fullSourceName, MAX_PATH);
-  WCHAR fullDestinationName[MAX_PATH];
-  modInfo->getFullPathName(lpNewFileName, fullDestinationName, MAX_PATH);
-
-  // source file definitively needs to be rerouted if it originates from the fake directory
-  bool rerouted = false;
-  int originID = -1;
-  std::wstring sourceReroute = modInfo->getRerouteOpenExisting(fullSourceName, false, &rerouted, &originID);
-  std::wstring destinationReroute = fullDestinationName;
-  LPCWSTR sPos = NULL;
-  if (PathStartsWith(fullDestinationName, modInfo->getDataPathW().c_str())) {
-    destinationReroute = modInfo->getRemovedLocation(fullDestinationName);
-
-    std::wostringstream temp;
-    if (!destinationReroute.empty()) {
-      // In the "create tmp, remove original, move tmp to original"-sequence we'd rather have the modified file in the original location.
-    } else if (rerouted && (originID != -1)) {
-      // source file is rerouted, destination file would be in data. use the same directory instead
-      FilesOrigin origin = modInfo->getFilesOrigin(originID);
-      temp << origin.getPath() << "\\" << (fullDestinationName + modInfo->getDataPathW().length() + 1);
-      destinationReroute = temp.str();
-    } else {
-      // default case - reroute to overwrite
-      temp << GameInfo::instance().getOverwriteDir() << "\\" << (fullDestinationName + modInfo->getDataPathW().length() + 1);
-      destinationReroute = temp.str();
-    }
-  } else if ((sPos = wcswcs(fullDestinationName, AppConfig::localSavePlaceholder())) != NULL) {
-    destinationReroute = modInfo->getProfilePath().append(L"\\saves\\").append(sPos + wcslen(AppConfig::localSavePlaceholder()));
-  }
-
-  { // create intermediate directories
-    std::wstring targetDirectory = destinationReroute.substr(0, destinationReroute.find_last_of(L"\\/"));
-    CreateDirectoryRecursive(targetDirectory.c_str(), NULL);
-  }
-
-  BOOL res = MoveFileW_reroute(sourceReroute.c_str(), destinationReroute.c_str());
-  if (res) {
-    modInfo->removeModFile(fullSourceName);
-  }
-  LOGDEBUG("move %ls to %ls: %d (%d)", sourceReroute.c_str(), destinationReroute.c_str(), res, ::GetLastError());
-  return res;
+  return MoveFileExW_rep(lpExistingFileName, lpNewFileName, MOVEFILE_COPY_ALLOWED);
 }
 
 BOOL WINAPI MoveFileA_rep(LPCSTR lpExistingFileName, LPCSTR lpNewFileName)
@@ -806,9 +804,9 @@ static bool firstRun = true;
 static void GetSectionRange(DWORD *start, DWORD *end, HANDLE moduleHandle)
 {
   BYTE *exeModule = reinterpret_cast<BYTE*>(moduleHandle);
-  if (exeModule == NULL) {
+  if (exeModule == nullptr) {
     Logger::Instance().error("failed to determine address range of executable: %lu", ::GetLastError());
-    *start = *end = NULL;
+    *start = *end = 0UL;
     return;
   }
 
@@ -854,7 +852,7 @@ static std::wstring GetSectionName(PVOID address)
 
 static const int s_BufferSize = 0x8000;
 static char s_Buffer[s_BufferSize];
-static PBYTE s_ReturnAddress = NULL;
+static PBYTE s_ReturnAddress = nullptr;
 
 // this includes a bit of wiggle room, for skyrim we need 42 bytes
 #define FUNCTION_BUFFER_SIZE 64
@@ -1033,12 +1031,13 @@ static bool identifyAndManipulate(DWORD *pos, DWORD size)
   // if we got here we seem to be right
   //
 
-  void *function = NULL;
+  void *function = nullptr;
   switch (disasm.GetReg2()) {
     case 0: function = pushModEAX; break;
     case 1: function = pushModECX; break;
     case 2: function = pushModEDX; break;
     case 3: function = pushModEBX; break;
+    default: return false;
   }
 
   size_t funcSize = getSnippetSize(function);
@@ -1136,10 +1135,10 @@ DWORD WINAPI GetPrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LP
   int localDummy = 42;  // this is a marker for the beginning of this function
   PROFILE();
 
-  if ((lpFileName != NULL) && (missingIniA.find(lpFileName) != missingIniA.end())) {
+  if ((lpFileName != nullptr) && (missingIniA.find(lpFileName) != missingIniA.end())) {
     errno = 0x02;
     ::SetLastError(ERROR_FILE_NOT_FOUND);
-    int defLength = lpDefault != NULL ? strlen(lpDefault) : 0;
+    int defLength = lpDefault != nullptr ? strlen(lpDefault) : 0;
     int res = (std::min<int>)(nSize - 1, defLength);
     if (res > 0) {
       strncpy(lpReturnedString, lpDefault, res);
@@ -1151,15 +1150,15 @@ DWORD WINAPI GetPrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LP
     }
   }
 
-  if (HookLock::isLocked(HookLock::GET_PROFILESTRING_GROUP) || (lpFileName == NULL)) {
+  if (HookLock::isLocked(HookLock::GET_PROFILESTRING_GROUP) || (lpFileName == nullptr)) {
     return GetPrivateProfileStringA_reroute(lpAppName, lpKeyName, lpDefault, lpReturnedString, nSize, lpFileName);
   }
 
   LPCSTR lastSlash = strrchr(lpFileName, '\\');
-  if (lastSlash == NULL) {
+  if (lastSlash == nullptr) {
     lastSlash = strrchr(lpFileName, '/');
   }
-  if (lastSlash == NULL) {
+  if (lastSlash == nullptr) {
     lastSlash = lpFileName;
   } else {
     ++lastSlash;
@@ -1174,8 +1173,8 @@ DWORD WINAPI GetPrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LP
       errno = 0;
       ::SetLastError(NOERROR);
       DWORD res = GetPrivateProfileStringA_reroute(lpAppName, lpKeyName, lpDefault, lpReturnedString, nSize, rerouteFilename.c_str());
-      // lpFileName can't be NULL here because there is a test earlier in the function
-      if ((::GetLastError() == ERROR_FILE_NOT_FOUND) && (lpFileName != NULL) &&
+      // lpFileName can't be nullptr here because there is a test earlier in the function
+      if ((::GetLastError() == ERROR_FILE_NOT_FOUND) && (lpFileName != nullptr) &&
           !(existingIniA.find(lpFileName) != existingIniA.end()) && !FileExists(lpFileName)) {
         LOGDEBUG("%s doesn't exist, no further queries", lpFileName);
         missingIniA.insert(lpFileName);
@@ -1187,12 +1186,12 @@ DWORD WINAPI GetPrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LP
   }
 
   if ((archiveListHookState == HOOK_NOTYET)
-      && (lpKeyName != NULL) && (lpKeyName[0] == 's')
+      && (lpKeyName != nullptr) && (lpKeyName[0] == 's')
       && (_stricmp(lpAppName, "Archive") == 0)) {
     // if we don't reach the success-case, we can safely assume it failed
     archiveListHookState = HOOK_FAILED;
     DWORD start, end;
-    GetSectionRange(&start, &end, ::GetModuleHandle(NULL));
+    GetSectionRange(&start, &end, ::GetModuleHandle(nullptr));
     // search up through the stack to find the first address that belongs to the code-segment of the game-binary.
     // that is the return address to the function that called GetPrivateProfileString
     DWORD *pos = reinterpret_cast<DWORD*>(&localDummy);
@@ -1210,7 +1209,7 @@ DWORD WINAPI GetPrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LP
     }
   }
 
-  if ((lpKeyName != NULL)
+  if ((lpKeyName != nullptr)
       && ((_stricmp(lpKeyName, "sResourceArchiveList") == 0) || (_stricmp(lpKeyName, "sArchiveList") == 0))) {
     size_t length = std::min<DWORD>(bsaResourceList.size(), nSize - 1);
     if ((length > 255) && (lpReturnedString != s_Buffer)) {
@@ -1220,7 +1219,7 @@ DWORD WINAPI GetPrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LP
     strncpy(lpReturnedString, bsaResourceList.c_str(), length);
     lpReturnedString[length] = '\0';
     return static_cast<DWORD>(length);
-  } else if ((lpKeyName != NULL) && (_stricmp(lpKeyName, "sResourceArchiveList2") == 0)) {
+  } else if ((lpKeyName != nullptr) && (_stricmp(lpKeyName, "sResourceArchiveList2") == 0)) {
     // don't use second resource list at all
     lpReturnedString[0] = '\0';
     return 0;
@@ -1235,7 +1234,7 @@ DWORD WINAPI GetPrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, LP
 
       res = GetPrivateProfileStringA_reroute(lpAppName, lpKeyName, lpDefault,
                                              temp.get(), nSize, rerouteFilename.c_str());
-    } else if (lpKeyName != NULL) {
+    } else if (lpKeyName != nullptr) {
       tweakedIniValues[ToWString(lpKeyName, false)] = ToWString(temp.get(), false);
     }
 
@@ -1253,12 +1252,12 @@ DWORD WINAPI GetPrivateProfileStringW_rep(LPCWSTR lpAppName, LPCWSTR lpKeyName, 
   if (HookLock::isLocked(HookLock::GET_PROFILESTRING_GROUP))
     return GetPrivateProfileStringW_reroute(lpAppName, lpKeyName, lpDefault, lpReturnedString, nSize, lpFileName);
 
-  if (lpFileName != NULL) {
+  if (lpFileName != nullptr) {
     DWORD res = GetPrivateProfileStringW_reroute(lpAppName, lpKeyName, L"DUMMY_VALUE", lpReturnedString, nSize, modInfo->getTweakedIniW().c_str());
     if (wcscmp(lpReturnedString, L"DUMMY_VALUE") == 0) {
       std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
       res = GetPrivateProfileStringW_reroute(lpAppName, lpKeyName, lpDefault, lpReturnedString, nSize, rerouteFilename.c_str());
-    } else if (lpKeyName != NULL) {
+    } else if (lpKeyName != nullptr) {
       tweakedIniValues[lpKeyName] = lpReturnedString;
     }
     return res;
@@ -1272,7 +1271,7 @@ BOOL WINAPI GetPrivateProfileStructA_rep(LPCSTR lpszSection, LPCSTR lpszKey, LPV
 {
   PROFILE();
 
-  if (szFile != NULL) {
+  if (szFile != nullptr) {
     std::string rerouteFilename = modInfo->getRerouteOpenExisting(szFile);
     return GetPrivateProfileStructA_reroute(lpszSection, lpszKey, lpStruct, uSizeStruct, rerouteFilename.c_str());
   } else {
@@ -1285,7 +1284,7 @@ BOOL WINAPI GetPrivateProfileStructW_rep(LPCWSTR lpszSection, LPCWSTR lpszKey, L
 {
   PROFILE();
 
-  if (szFile != NULL) {
+  if (szFile != nullptr) {
     std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(szFile);
     return GetPrivateProfileStructW_reroute(lpszSection, lpszKey, lpStruct, uSizeStruct, rerouteFilename.c_str());
   } else {
@@ -1298,7 +1297,7 @@ DWORD WINAPI GetPrivateProfileSectionNamesA_rep(LPSTR lpszReturnBuffer, DWORD nS
 {
   PROFILE();
 
-  if (lpFileName != NULL) {
+  if (lpFileName != nullptr) {
     std::string rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
     return GetPrivateProfileSectionNamesA_reroute(lpszReturnBuffer, nSize, rerouteFilename.c_str());
   } else {
@@ -1311,7 +1310,7 @@ DWORD WINAPI GetPrivateProfileSectionNamesW_rep(LPWSTR lpszReturnBuffer, DWORD n
 {
   PROFILE();
 
-  if (lpFileName != NULL) {
+  if (lpFileName != nullptr) {
     std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
     return GetPrivateProfileSectionNamesW_reroute(lpszReturnBuffer, nSize, rerouteFilename.c_str());
   } else {
@@ -1324,7 +1323,7 @@ DWORD WINAPI GetPrivateProfileSectionA_rep(LPCSTR lpAppName, LPSTR lpReturnedStr
 {
   PROFILE();
 
-  if (lpFileName != NULL) {
+  if (lpFileName != nullptr) {
     std::string rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
     return GetPrivateProfileSectionA_reroute(lpAppName, lpReturnedString, nSize, rerouteFilename.c_str());
   } else {
@@ -1337,7 +1336,7 @@ DWORD WINAPI GetPrivateProfileSectionW_rep(LPCWSTR lpAppName, LPWSTR lpReturnedS
 {
   PROFILE();
 
-  if (lpFileName != NULL) {
+  if (lpFileName != nullptr) {
     std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
     return GetPrivateProfileSectionW_reroute(lpAppName, lpReturnedString, nSize, rerouteFilename.c_str());
   } else {
@@ -1350,19 +1349,19 @@ UINT WINAPI GetPrivateProfileIntA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, INT nD
 {
   PROFILE();
 
-  if ((lpFileName != NULL) && (missingIniA.find(lpFileName) != missingIniA.end())) {
+  if ((lpFileName != nullptr) && (missingIniA.find(lpFileName) != missingIniA.end())) {
     ::SetLastError(ERROR_FILE_NOT_FOUND);
     return nDefault;
   }
   HookLock lock(HookLock::GET_PROFILESTRING_GROUP);
   UNREFERENCED_PARAMETER(lock);
 
-  if (lpFileName != NULL) {
+  if (lpFileName != nullptr) {
     UINT res = GetPrivateProfileIntA_reroute(lpAppName, lpKeyName, INT_MAX, modInfo->getTweakedIniA().c_str());
     if (res == INT_MAX) {
       std::string rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
       res = GetPrivateProfileIntA_reroute(lpAppName, lpKeyName, nDefault, rerouteFilename.c_str());
-    } else if (lpKeyName != NULL) {
+    } else if (lpKeyName != nullptr) {
       tweakedIniValues[ToWString(lpKeyName, false)] = std::to_wstring(static_cast<unsigned long long>(res));
     }
     return res;
@@ -1378,12 +1377,12 @@ UINT WINAPI GetPrivateProfileIntW_rep(LPCWSTR lpAppName, LPCWSTR lpKeyName, INT 
 
   HookLock lock(HookLock::GET_PROFILESTRING_GROUP); // on some (all?) systems, getprivateprofileint calls getprivateprofilestring
 
-  if (lpFileName != NULL) {
+  if (lpFileName != nullptr) {
     UINT res = GetPrivateProfileIntW_reroute(lpAppName, lpKeyName, INT_MAX, modInfo->getTweakedIniW().c_str());
     if (res == INT_MAX) {
       std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
       res = GetPrivateProfileIntW_reroute(lpAppName, lpKeyName, nDefault, rerouteFilename.c_str());
-    } else if (lpKeyName != NULL) {
+    } else if (lpKeyName != nullptr) {
       tweakedIniValues[lpKeyName] = std::to_wstring(static_cast<unsigned long long>(res));
     }
     return res;
@@ -1415,11 +1414,11 @@ void MakeFileExist(LPCWSTR fileName)
     std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(fileName, false, &rerouted);
     if (!rerouted && !FileExists_reroute(fileName)) {
       std::wostringstream temp;
-      temp << GameInfo::instance().getOverwriteDir() << "\\" << (fullFileName + modInfo->getDataPathW().length());
+      temp << modInfo->getOverwritePath() << "\\" << (fullFileName + modInfo->getDataPathW().length());
       rerouteFilename = temp.str();
 
       std::wstring targetDirectory = rerouteFilename.substr(0, rerouteFilename.find_last_of(L"\\/"));
-      CreateDirectoryRecursive(targetDirectory.c_str(), NULL);
+      CreateDirectoryRecursive(targetDirectory.c_str(), nullptr);
       modInfo->addOverwriteFile(rerouteFilename);
     }
   }
@@ -1436,7 +1435,7 @@ BOOL WINAPI WritePrivateProfileSectionA_rep(LPCSTR lpAppName, LPCSTR lpString, L
 {
   PROFILE();
 
-  if (lpFileName != NULL) {
+  if (lpFileName != nullptr) {
     MakeFileExist(lpFileName);
     std::string rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
     return WritePrivateProfileSectionA_reroute(lpAppName, lpString, rerouteFilename.c_str());
@@ -1450,7 +1449,7 @@ BOOL WINAPI WritePrivateProfileSectionW_rep(LPCWSTR lpAppName, LPCWSTR lpString,
 {
   PROFILE();
 
-  if (lpFileName != NULL) {
+  if (lpFileName != nullptr) {
     MakeFileExist(lpFileName);
     std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
     return WritePrivateProfileSectionW_reroute(lpAppName, lpString, rerouteFilename.c_str());
@@ -1464,7 +1463,7 @@ BOOL WINAPI WritePrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, L
 {
   PROFILE();
   // lpKeyName is in fact allowed to be null, in which case this function has entirely different semantics
-  if (lpKeyName != NULL) {
+  if (lpKeyName != nullptr) {
     std::wstring keyW = ToWString(lpKeyName, false);
     if (tweakedIniValues.find(keyW) != tweakedIniValues.end()) {
       if (ToWString(lpString, false) != tweakedIniValues[keyW]) {
@@ -1480,7 +1479,7 @@ BOOL WINAPI WritePrivateProfileStringA_rep(LPCSTR lpAppName, LPCSTR lpKeyName, L
     }
   }
 
-  if (lpFileName != NULL) {
+  if (lpFileName != nullptr) {
     MakeFileExist(lpFileName);
     std::string rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
     return WritePrivateProfileStringA_reroute(lpAppName, lpKeyName, lpString, rerouteFilename.c_str());
@@ -1494,7 +1493,7 @@ BOOL WINAPI WritePrivateProfileStringW_rep(LPCWSTR lpAppName, LPCWSTR lpKeyName,
 {
   PROFILE();
 
-  if (lpFileName != NULL) {
+  if (lpFileName != nullptr) {
     MakeFileExist(lpFileName);
     std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(lpFileName);
     return WritePrivateProfileStringW_reroute(lpAppName, lpKeyName, lpString, rerouteFilename.c_str());
@@ -1509,7 +1508,7 @@ BOOL WINAPI WritePrivateProfileStructA_rep(LPCSTR lpszSection, LPCSTR lpszKey, L
 {
   PROFILE();
 
-  if (szFile != NULL) {
+  if (szFile != nullptr) {
     MakeFileExist(szFile);
     std::string rerouteFilename = modInfo->getRerouteOpenExisting(szFile);
     return WritePrivateProfileStructA_reroute(lpszSection, lpszKey, lpStruct, uSizeStruct, rerouteFilename.c_str());
@@ -1524,7 +1523,7 @@ BOOL WINAPI WritePrivateProfileStructW_rep(LPCWSTR lpszSection, LPCWSTR lpszKey,
 {
   PROFILE();
 
-  if (szFile != NULL) {
+  if (szFile != nullptr) {
     MakeFileExist(szFile);
     std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(szFile);
     return WritePrivateProfileStructW_reroute(lpszSection, lpszKey, lpStruct, uSizeStruct, rerouteFilename.c_str());
@@ -1601,11 +1600,11 @@ BOOL WINAPI CopyFileW_rep(LPCWSTR lpExistingFileName, LPCWSTR lpNewFileName, BOO
   bool reroutedToOverwrite = false;
   if (PathStartsWith(fullNewFileName, modInfo->getDataPathW().c_str())) {
     std::wostringstream temp;
-    temp << GameInfo::instance().getOverwriteDir() << "\\" << (fullNewFileName + modInfo->getDataPathW().length());
+    temp << modInfo->getOverwritePath() << "\\" << (fullNewFileName + modInfo->getDataPathW().length());
     rerouteNewFileName = temp.str();
 
     std::wstring targetDirectory = rerouteNewFileName.substr(0, rerouteNewFileName.find_last_of(L"\\/"));
-    CreateDirectoryRecursive(targetDirectory.c_str(), NULL);
+    CreateDirectoryRecursive(targetDirectory.c_str(), nullptr);
     reroutedToOverwrite = true;
   }
 
@@ -1643,11 +1642,11 @@ BOOL WINAPI CreateHardLinkW_rep(LPCWSTR lpFileName, LPCWSTR lpExistingFileName,
   bool reroutedToOverwrite = false;
   if (PathStartsWith(fullNewFileName, modInfo->getDataPathW().c_str())) {
     std::wostringstream temp;
-    temp << GameInfo::instance().getOverwriteDir() << "\\" << (fullNewFileName + modInfo->getDataPathW().length());
+    temp << modInfo->getOverwritePath() << "\\" << (fullNewFileName + modInfo->getDataPathW().length());
     rerouteNewFileName = temp.str();
 
     std::wstring targetDirectory = rerouteNewFileName.substr(0, rerouteNewFileName.find_last_of(L"\\/"));
-    CreateDirectoryRecursive(targetDirectory.c_str(), NULL);
+    CreateDirectoryRecursive(targetDirectory.c_str(), nullptr);
     reroutedToOverwrite = true;
   }
 
@@ -1663,7 +1662,8 @@ BOOL WINAPI CreateHardLinkW_rep(LPCWSTR lpFileName, LPCWSTR lpExistingFileName,
   if (destID != -1) {
     wchar_t driveRoot[4];
     _snwprintf(driveRoot, 4, L"%c:\\", 'A' + destID);
-    ::GetVolumeInformationW(driveRoot, NULL, 0, NULL, NULL, NULL, fsName, 10);
+    driveRoot[3] = L'\0';
+    ::GetVolumeInformationW(driveRoot, nullptr, 0, nullptr, nullptr, nullptr, fsName, 10);
   }
 
   if ((sourceID == destID) && (sourceID != -1) && (wcsncmp(fsName, L"NTFS", 10) == 0)) {
@@ -1704,11 +1704,11 @@ DWORD WINAPI GetFullPathNameW_rep(LPCWSTR lpFileName, DWORD nBufferLength, LPWST
       size_t count = std::min<size_t>(nBufferLength - 1, wcslen(temp));
       wcsncpy(lpBuffer, temp, count);
       lpBuffer[count] = L'\0';
-      if (lpFilePart != NULL) {
+      if (lpFilePart != nullptr) {
         *lpFilePart = GetBaseName(lpBuffer);
         if (**lpFilePart == L'\0') {
           // lpBuffer is a directory
-          *lpFilePart = NULL;
+          *lpFilePart = nullptr;
         }
       }
       return count;
@@ -1728,11 +1728,11 @@ DWORD WINAPI GetFullPathNameW_rep(LPCWSTR lpFileName, DWORD nBufferLength, LPWST
         wcsncpy(lpBuffer, temp, count);
       }
       lpBuffer[count] = L'\0';
-      if (lpFilePart != NULL) {
+      if (lpFilePart != nullptr) {
         *lpFilePart = GetBaseName(lpBuffer);
         if (**lpFilePart == L'\0') {
           // lpBuffer is a directory
-          *lpFilePart = NULL;
+          *lpFilePart = nullptr;
         }
       }
       return count;
@@ -1772,7 +1772,7 @@ int STDAPICALLTYPE SHFileOperationA_rep(LPSHFILEOPSTRUCTA lpFileOp)
   newOp.pFrom = &newFrom[0];
 
   std::vector<char> newTo;
-  if (lpFileOp->pTo != NULL) {
+  if (lpFileOp->pTo != nullptr) {
     pos = lpFileOp->pTo;
     for (;;) {
       if (*pos == L'\0') break;
@@ -1783,17 +1783,18 @@ int STDAPICALLTYPE SHFileOperationA_rep(LPSHFILEOPSTRUCTA lpFileOp)
         // TODO need to addOverwriteFile in both cases and if the destination is a directory we need to
         // extract the file name
         if (strlen(pos) == modInfo->getDataPathA().length()) {
-          rerouteFilename = ToString(GameInfo::instance().getOverwriteDir(), false);
+          rerouteFilename = ToString(modInfo->getOverwritePath(), false);
         } else {
           std::ostringstream temp;
-          temp << ToString(GameInfo::instance().getOverwriteDir(), false) << "\\" << (pos + modInfo->getDataPathA().length());
+          temp << ToString(modInfo->getOverwritePath(), false) << "\\" << (pos + modInfo->getDataPathA().length());
           rerouteFilename = temp.str();
 
           std::string targetDirectory = rerouteFilename.substr(0, rerouteFilename.find_last_of("\\/"));
-          CreateDirectoryRecursive(ToWString(targetDirectory, false).c_str(), NULL);
+          CreateDirectoryRecursive(ToWString(targetDirectory, false).c_str(), nullptr);
           modInfo->addOverwriteFile(ToWString(rerouteFilename, false));
         }
       }
+
       newTo.insert(newTo.end(), rerouteFilename.begin(), rerouteFilename.end());
       newTo.push_back('\0');
       pos += strlen(pos) + 1;
@@ -1802,11 +1803,11 @@ int STDAPICALLTYPE SHFileOperationA_rep(LPSHFILEOPSTRUCTA lpFileOp)
 
     newOp.pTo = &newTo[0];
   } else {
-    newOp.pTo = NULL;
+    newOp.pTo = nullptr;
   }
 
   LOGDEBUG("sh file operation a %d: %s - %s", newOp.wFunc, newOp.pFrom,
-           newOp.pTo != NULL ? newOp.pTo : "NULL");
+           newOp.pTo != nullptr ? newOp.pTo : "nullptr");
   return SHFileOperationA_reroute(&newOp);
 }
 
@@ -1840,7 +1841,7 @@ int STDAPICALLTYPE SHFileOperationW_rep(LPSHFILEOPSTRUCTW lpFileOp)
   newOp.pFrom = &newFrom[0];
 
   std::vector<wchar_t> newTo;
-  if (lpFileOp->pTo != NULL) {
+  if (lpFileOp->pTo != nullptr) {
     pos = lpFileOp->pTo;
     for (;;) {
       if (*pos == L'\0') break;
@@ -1851,14 +1852,14 @@ int STDAPICALLTYPE SHFileOperationW_rep(LPSHFILEOPSTRUCTW lpFileOp)
         // TODO need to addOverwriteFile in both cases and if the destination is a directory we need to
         // extract the file name
         if (wcslen(pos) == modInfo->getDataPathW().length()) {
-          rerouteFilename = GameInfo::instance().getOverwriteDir();
+          rerouteFilename = modInfo->getOverwritePath();
         } else {
           std::wostringstream temp;
-          temp << GameInfo::instance().getOverwriteDir() << "\\" << (pos + modInfo->getDataPathW().length());
+          temp << modInfo->getOverwritePath() << "\\" << (pos + modInfo->getDataPathW().length());
           rerouteFilename = temp.str();
 
           std::wstring targetDirectory = rerouteFilename.substr(0, rerouteFilename.find_last_of(L"\\/"));
-          CreateDirectoryRecursive(targetDirectory.c_str(), NULL);
+          CreateDirectoryRecursive(targetDirectory.c_str(), nullptr);
           modInfo->addOverwriteFile(rerouteFilename);
         }
       }
@@ -1870,11 +1871,11 @@ int STDAPICALLTYPE SHFileOperationW_rep(LPSHFILEOPSTRUCTW lpFileOp)
 
     newOp.pTo = &newTo[0];
   } else {
-    newOp.pTo = NULL;
+    newOp.pTo = nullptr;
   }
 
   LOGDEBUG("sh file operation w %d: %ls - %ls", newOp.wFunc, newOp.pFrom,
-           newOp.pTo != NULL ? newOp.pTo : L"NULL");
+           newOp.pTo != nullptr ? newOp.pTo : L"nullptr");
   return SHFileOperationW_reroute(&newOp);
 }
 
@@ -1887,11 +1888,14 @@ BOOL WINAPI GetFileVersionInfoW_rep(LPCWSTR lptstrFilename, DWORD dwHandle, DWOR
   WCHAR temp[MAX_PATH];
   modInfo->getFullPathName(lptstrFilename, temp, MAX_PATH);
 
-  std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(temp, false, NULL);
+  bool rerouted = false;
+  std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(temp, false, &rerouted);
 
   BOOL res = GetFileVersionInfoW_reroute(rerouteFilename.c_str(), dwHandle, dwLen, lpData);
 
-  LOGDEBUG("get file version w %ls -> %ls: %d", lptstrFilename, rerouteFilename.c_str(), res);
+  if (rerouted) {
+    LOGDEBUG("get file version w %ls -> %ls: %d", lptstrFilename, rerouteFilename.c_str(), res);
+  }
 
   return res;
 }
@@ -1908,9 +1912,12 @@ BOOL WINAPI GetFileVersionInfoExW_rep(DWORD dwFlags, LPCWSTR lptstrFilename, DWO
   WCHAR temp[MAX_PATH];
   modInfo->getFullPathName(lptstrFilename, temp, MAX_PATH);
 
-  std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(temp, false, NULL);
+  bool rerouted = false;
+  std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(temp, false, &rerouted);
 
-  LOGDEBUG("get file version ex w %ls -> %ls", lptstrFilename, rerouteFilename.c_str());
+  if (rerouted) {
+    LOGDEBUG("get file version ex w %ls -> %ls", lptstrFilename, rerouteFilename.c_str());
+  }
 
   return GetFileVersionInfoExW_reroute(dwFlags, rerouteFilename.c_str(), dwHandle, dwLen, lpData);
 }
@@ -1922,11 +1929,14 @@ DWORD WINAPI GetFileVersionInfoSizeW_rep(LPCWSTR lptstrFilename, LPDWORD lpdwHan
   WCHAR temp[MAX_PATH];
   modInfo->getFullPathName(lptstrFilename, temp, MAX_PATH);
 
-  std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(temp, false, NULL);
+  bool rerouted = false;
+  std::wstring rerouteFilename = modInfo->getRerouteOpenExisting(temp, false, &rerouted);
 
   DWORD res = GetFileVersionInfoSizeW_reroute(rerouteFilename.c_str(), lpdwHandle);
 
-  LOGDEBUG("get file version size %ls -> %ls -> %lu (%x)", lptstrFilename, rerouteFilename.c_str(), res, ::GetLastError());
+  if (rerouted) {
+    LOGDEBUG("get file version size %ls -> %ls -> %lu (%x)", lptstrFilename, rerouteFilename.c_str(), res, ::GetLastError());
+  }
 
   return res;
 }
@@ -1935,7 +1945,12 @@ DWORD WINAPI GetFileVersionInfoSizeW_rep(LPCWSTR lptstrFilename, LPDWORD lpdwHan
 DWORD WINAPI GetModuleFileNameW_rep(HMODULE hModule, LPWSTR lpFilename, DWORD nSize)
 {
   PROFILE();
+
   DWORD oldSize = GetModuleFileNameW_reroute(hModule, lpFilename, nSize);
+  if (HookLock::isLocked(HookLock::GET_MODULENAME_GROUP)) {
+    return oldSize;
+  }
+
   if (oldSize != 0) {
     // found name
     bool isRerouted = false;
@@ -1952,7 +1967,7 @@ DWORD WINAPI GetModuleFileNameW_rep(HMODULE hModule, LPWSTR lpFilename, DWORD nS
       if (reroutedSize > 0) {
         if (reroutedSize < oldSize) {
           // zero out the string windows has previously written to
-          memset(lpFilename, '\0', oldSize * sizeof(wchar_t));
+          memset(lpFilename, '\0', std::min(oldSize, nSize) * sizeof(wchar_t));
         }
         // this truncates the string if the buffer is too small
         wcsncpy(lpFilename, rerouted.c_str(), reroutedSize + 1);
@@ -1961,6 +1976,44 @@ DWORD WINAPI GetModuleFileNameW_rep(HMODULE hModule, LPWSTR lpFilename, DWORD nS
     }
   }
   return oldSize;
+}
+
+
+DWORD WINAPI GetModuleFileNameA_rep(HMODULE hModule, LPSTR lpFilename, DWORD nSize)
+{
+  PROFILE();
+
+  HookLock lock(HookLock::GET_MODULENAME_GROUP);
+
+  DWORD origSize = GetModuleFileNameA_reroute(hModule, lpFilename, nSize);
+
+  if (origSize != 0) {
+    // found name
+    bool isRerouted = false;
+    std::wstring oldName = ToWString(lpFilename, false);
+    std::wstring reroutedW = modInfo->reverseReroute(oldName, &isRerouted);
+    if (isRerouted) {
+      std::string rerouted = ToString(reroutedW, false);
+      DWORD reroutedSize = rerouted.size();
+      if (reroutedSize >= nSize) {
+        if (!winXP) {
+          ::SetLastError(ERROR_INSUFFICIENT_BUFFER);
+        }
+        reroutedSize = nSize - 1;
+      }
+      // res can't be bigger than nSize-1 at this point
+      if (reroutedSize > 0) {
+        if (reroutedSize < origSize) {
+          // zero out the string windows has previously written to
+          memset(lpFilename, '\0', std::min(origSize, nSize) * sizeof(char));
+        }
+        // this truncates the string if the buffer is too small
+        strncpy(lpFilename, rerouted.c_str(), reroutedSize + 1);
+      }
+      return reroutedSize;
+    }
+  }
+  return origSize;
 }
 
 
@@ -2170,10 +2223,10 @@ NTSTATUS addNtSearchData(const std::wstring &localPath,
 {
   NTSTATUS res = STATUS_NO_SUCH_FILE;
   // try to open the directory handle. If this doesn't work, the mod contains no such directory
-  HANDLE hdl = ::CreateFileW_reroute(localPath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+  HANDLE hdl = ::CreateFileW_reroute(localPath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
   if (hdl != INVALID_HANDLE_VALUE) {
     IO_STATUS_BLOCK status;
-    res = NtQueryDirectoryFile_reroute(hdl, NULL, NULL, NULL, &status, buffer.get(), bufferSize, FileInformationClass, FALSE, FileName, FALSE);
+    res = NtQueryDirectoryFile_reroute(hdl, nullptr, nullptr, nullptr, &status, buffer.get(), bufferSize, FileInformationClass, FALSE, FileName, FALSE);
     while ((res == STATUS_SUCCESS) && (status.Information > 0)) {
       uint8_t *pos = buffer.get();
       ULONG totalOffset = 0;
@@ -2198,7 +2251,7 @@ NTSTATUS addNtSearchData(const std::wstring &localPath,
         totalOffset += size;
       }
 
-      res = NtQueryDirectoryFile_reroute(hdl, NULL, NULL, NULL, &status, buffer.get(), bufferSize, FileInformationClass, FALSE, FileName, FALSE);
+      res = NtQueryDirectoryFile_reroute(hdl, nullptr, nullptr, nullptr, &status, buffer.get(), bufferSize, FileInformationClass, FALSE, FileName, FALSE);
     }
   }
   return res;
@@ -2214,9 +2267,9 @@ NTSTATUS WINAPI NtQueryDirectoryFile_rep(HANDLE FileHandle, HANDLE Event, PIO_AP
                  PUNICODE_STRING FileName, BOOLEAN RestartScan)
 {
   if (   (directoryCFHandles.find(FileHandle) != directoryCFHandles.end())
-      && (ApcRoutine == NULL)) {   // this hook doesn't support asynchronous operation
+      && (ApcRoutine == nullptr)) {   // this hook doesn't support asynchronous operation
     LOGDEBUG("ntquerydirectoryfile called with a rerouted handle from CreateFile (%d) (%d) (%.*ls)",
-        ReturnSingleEntry, FileInformationClass, FileName != NULL ? FileName->Length : 4, FileName != NULL ? FileName->Buffer : L"null");
+        ReturnSingleEntry, FileInformationClass, FileName != nullptr ? FileName->Length : 4, FileName != nullptr ? FileName->Buffer : L"null");
     if (RestartScan) {
       // drop our own cache data on rescan
       queryMutex.lock();
@@ -2264,7 +2317,7 @@ NTSTATUS WINAPI NtQueryDirectoryFile_rep(HANDLE FileHandle, HANDLE Event, PIO_AP
     ULONG offset = 0;
 
     boost::mutex::scoped_lock l(queryMutex);
-    uint8_t *destination = NULL;
+    uint8_t *destination = nullptr;
     // ok, data available, return it
     while (qdfData[FileHandle].size() > 0) {
       const std::vector<uint8_t> &data = qdfData[FileHandle].front();
@@ -2290,7 +2343,7 @@ NTSTATUS WINAPI NtQueryDirectoryFile_rep(HANDLE FileHandle, HANDLE Event, PIO_AP
       }
     }
 
-    if (destination != NULL) {
+    if (destination != nullptr) {
       ULONG zero = 0UL;
       memcpy(destination, &zero, sizeof(ULONG));
     }
@@ -2323,7 +2376,7 @@ std::vector<ApiHook*> hooks;
 
 BOOL InitHooks()
 {
-  LPCTSTR module = ::GetModuleHandle(TEXT("kernelbase.dll")) != NULL ? TEXT("kernelbase.dll") : TEXT("kernel32");
+  LPCTSTR module = ::GetModuleHandle(TEXT("kernelbase.dll")) != nullptr ? TEXT("kernelbase.dll") : TEXT("kernel32");
 
   /*
   OSVERSIONINFO versionInfo;
@@ -2378,6 +2431,7 @@ BOOL InitHooks()
     INITHOOK(TEXT("kernel32.dll"), CreateHardLinkA);
     INITHOOK(TEXT("kernel32.dll"), CreateHardLinkW);
     INITHOOK(TEXT("kernel32.dll"), GetFullPathNameW);
+    INITHOOK(TEXT("kernel32.dll"), GetModuleFileNameA);
     INITHOOK(TEXT("kernel32.dll"), GetModuleFileNameW);
     INITHOOK(TEXT("Shell32.dll"), SHFileOperationA);
     INITHOOK(TEXT("Shell32.dll"), SHFileOperationW);
@@ -2418,7 +2472,7 @@ std::string FromHex(const char *string)
     char temp[3];
     strncpy(temp, string + i, 2);
     temp[2] = '\0';
-    char res = (char)strtol(temp, NULL, 16);
+    char res = (char)strtol(temp, nullptr, 16);
     result += res;
   }
   return result;
@@ -2432,7 +2486,7 @@ std::wstring iniDecode(const char *stringEncoded)
   for (const char *pntPtr = stringEncoded; *pntPtr != '\0'; ++pntPtr) {
     if (strncmp(pntPtr, "\\x", 2) == 0) {
       pntPtr += 2;
-      int numeric = strtol(pntPtr, NULL, 16);
+      int numeric = strtol(pntPtr, nullptr, 16);
       resultUTF8.push_back(static_cast<char>(numeric));
       ++tPos;
       ++pntPtr;
@@ -2445,7 +2499,7 @@ std::wstring iniDecode(const char *stringEncoded)
 }
 
 
-BOOL SetUp(const std::wstring &iniName, const wchar_t *profileNameIn)
+BOOL SetUp(const std::wstring &iniName, const wchar_t *profileNameIn, const std::wstring &moPath, const std::wstring &moDataPath)
 {
   std::wstring profileName;
   if (profileNameIn[0] == '\0') {
@@ -2459,37 +2513,27 @@ BOOL SetUp(const std::wstring &iniName, const wchar_t *profileNameIn)
     profileName = profileNameIn;
   }
 
-  wchar_t modDirectory[MAX_PATH];
-  {
-    wchar_t temp[MAX_PATH];
-    ::GetPrivateProfileStringW(L"Settings", L"mod_directory", GameInfo::instance().getModsDir().c_str(), temp, MAX_PATH, iniName.c_str());
-    std::wostringstream profileDir;
-    profileDir << GameInfo::instance().getProfilesDir() << "\\" << profileName;
-    if (!FileExists(profileDir.str())) {
-      Logger::Instance().error("profile not found at %ls", profileDir.str().c_str());
-      return FALSE;
-    }
-
-    Canonicalize(modDirectory, temp);
-
-    if (!FileExists(modDirectory)) {
-      Logger::Instance().error("mod directory not found at %ls", temp);
-      return FALSE;
-    }
-  }
-
   std::vector<std::wstring> iniFiles = GameInfo::instance().getIniFileNames();
   for (auto iter = iniFiles.begin(); iter != iniFiles.end(); ++iter) {
     iniFilesA.insert(ToString(ToLower(*iter), false));
   }
 
-  Logger::Instance().info("mods at %ls", modDirectory);
   Logger::Instance().info("using profile %ls", profileName.c_str());
 
   try {
-    modInfo = new ModInfo(profileName, modDirectory, true);
+    modInfo = new ModInfo(profileName, true, moPath, moDataPath);
   } catch (const std::exception &e) {
     Logger::Instance().error("failed to initialize vfs: %s", e.what());
+    return FALSE;
+  }
+
+  if (!FileExists(modInfo->getProfilePath().c_str())) {
+    Logger::Instance().error("profile not found at %ls", modInfo->getProfilePath().c_str());
+    return FALSE;
+  }
+
+  if (!FileExists(modInfo->getModPathW().c_str())) {
+    Logger::Instance().error("mod directory not found at %ls", modInfo->getModPathW().c_str());
     return FALSE;
   }
 
@@ -2513,10 +2557,14 @@ void nextShortName(char *nameBuffer)
 }
 
 
-BOOL SetUpBSAMap()
+BOOL SetUpBSAMap(bool fallout)
 {
+  if (fallout) {
+    LOGDEBUG("will apply fallout specific workaround");
+  }
+
   std::wostringstream archiveFileName;
-  archiveFileName << GameInfo::instance().getProfilesDir() << L"\\" << modInfo->getProfileName() << L"\\archives.txt";
+  archiveFileName << modInfo->getProfilePath() << L"\\archives.txt";
 
   std::fstream file(archiveFileName.str().c_str());
   if (!file.is_open()) {
@@ -2540,6 +2588,9 @@ BOOL SetUpBSAMap()
 
     Logger::Instance().info("\"%s\" maps to \"%s\"", shortName, buffer);
     bsaMap[shortName] = buffer;
+    if (fallout) {
+      usedBSAList.insert(ToLower(buffer));
+    }
     if (!first) {
       bsaResourceList.append(",");
     } else {
@@ -2557,7 +2608,7 @@ BOOL SetUpBSAMap()
 
 void SetUpBlacklist()
 {
-  std::ifstream blacklistFile(ToString(moPath, false) + "\\process_blacklist.txt", std::ifstream::in);
+  std::ifstream blacklistFile(ToString(modInfo->getMOPath(), false) + "\\process_blacklist.txt", std::ifstream::in);
   if (blacklistFile.is_open()) {
     char buffer[MAX_PATH];
     while (blacklistFile.getline(buffer, MAX_PATH)) {
@@ -2566,7 +2617,7 @@ void SetUpBlacklist()
 
     blacklistFile.close();
   } else {
-    std::list<std::string> temp = boost::assign::list_of("steam.exe")("chrome.exe")("firefox.exe");
+    std::list<std::string> temp = { "steam.exe", "steamerrorreporter.exe", "chrome.exe", "firefox.exe", "opera.exe" };
     processBlacklist = std::set<std::string>(temp.begin(), temp.end());
   }
 }
@@ -2600,18 +2651,21 @@ void writeMiniDump(PEXCEPTION_POINTERS exceptionPtrs)
     FuncMiniDumpWriteDump funcDump = (FuncMiniDumpWriteDump)::GetProcAddress(dbgDLL, "MiniDumpWriteDump");
     if (funcDump) {
       wchar_t dmpPath[MAX_PATH_UNICODE];
-      ::GetModuleFileNameW(dllModule, dmpPath, MAX_PATH_UNICODE);
+      if (::GetModuleFileNameW(dllModule, dmpPath, MAX_PATH_UNICODE) == 0) {
+        Logger::Instance().error("No crash dump created, failed to determine destination directory. errorcode: %lu", ::GetLastError());
+        return;
+      }
       wcscat(dmpPath, L".dmp");
 
       HANDLE dumpFile = ::CreateFileW_reroute(dmpPath,
-                                     GENERIC_WRITE, FILE_SHARE_WRITE, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+                                     GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
       if (dumpFile != INVALID_HANDLE_VALUE) {
         _MINIDUMP_EXCEPTION_INFORMATION exceptionInfo;
         exceptionInfo.ThreadId = ::GetCurrentThreadId();
         exceptionInfo.ExceptionPointers = exceptionPtrs;
-        exceptionInfo.ClientPointers = NULL;
+        exceptionInfo.ClientPointers = false;
 
-        BOOL success = funcDump(::GetCurrentProcess(), ::GetCurrentProcessId(), dumpFile, MiniDumpNormal, &exceptionInfo, NULL, NULL);
+        BOOL success = funcDump(::GetCurrentProcess(), ::GetCurrentProcessId(), dumpFile, MiniDumpNormal, &exceptionInfo, nullptr, nullptr);
 
         ::CloseHandle(dumpFile);
         if (success) {
@@ -2662,14 +2716,6 @@ LONG WINAPI VEHandler(PEXCEPTION_POINTERS exceptionPtrs)
       Logger::Instance().info("Windows Exception (%x). Last hooked call: %s",
                               exceptionPtrs->ExceptionRecord->ExceptionCode, s_LastFunction);
     }
-/*
-    if (exceptionPtrs->ExceptionRecord->ExceptionCode != 0xC0000005) {
-      // don't want to break on non-critical errors. The above block didn't work well, crashes
-      // happened for exceptions that wouldn't have been a problem
-      return EXCEPTION_CONTINUE_SEARCH;
-    }*/
-
-    Logger::Instance().error("Windows Exception (%x). Last hooked call: %s", exceptionPtrs->ExceptionRecord->ExceptionCode, s_LastFunction);
 
     if (exceptionPtrs->ExceptionRecord->ExceptionCode == 0xC0000005) {
       Logger::Instance().error("This is a critical error, the application will probably crash now.");
@@ -2677,7 +2723,7 @@ LONG WINAPI VEHandler(PEXCEPTION_POINTERS exceptionPtrs)
 
       writeMiniDump(exceptionPtrs);
 
-      if (exceptionHandler != NULL) {
+      if (exceptionHandler != nullptr) {
         ::RemoveVectoredExceptionHandler(exceptionHandler);
       }
     }
@@ -2686,34 +2732,60 @@ LONG WINAPI VEHandler(PEXCEPTION_POINTERS exceptionPtrs)
   }
 }
 
+std::wstring getMODataPath(const std::wstring &moPath)
+{
+  std::wifstream instanceFile(ToString(moPath, false) + "\\INSTANCE");
+  std::wstring instancePath;
+  if (instanceFile.is_open()) {
+    wchar_t buffer[MAX_PATH];
+    instanceFile.getline(buffer, MAX_PATH);
+    instanceFile.close();
+    instancePath = buffer;
+  }
+
+  if (instancePath.length() != 0) {
+    wchar_t appDataPath[MAX_PATH];
+    if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA, nullptr, SHGFP_TYPE_CURRENT, appDataPath))) {
+      return std::wstring(appDataPath) + L"\\ModOrganizer\\" + instancePath;
+    }
+  }
+  return moPath;
+}
+
 
 BOOL Init(int logLevel, const wchar_t *profileName)
 {
-  if (modInfo != NULL) {
+  if (modInfo != nullptr) {
     // already initialised
     return TRUE;
   }
 
   sLogLevel = logLevel;
 
-  wchar_t mutexName[100];
+  wchar_t mutexName[101];
   _snwprintf(mutexName, 100, L"mo_dll_%d", ::GetCurrentProcessId());
-  instanceMutex = ::CreateMutexW(NULL, FALSE, mutexName);
-  if ((instanceMutex == NULL) || (::GetLastError() == ERROR_ALREADY_EXISTS)) {
+  mutexName[100] = '\0';
+  instanceMutex = ::CreateMutexW(nullptr, FALSE, mutexName);
+  if ((instanceMutex == nullptr) || (::GetLastError() == ERROR_ALREADY_EXISTS)) {
     return TRUE;
   }
 
   wchar_t pathBuffer[MAX_PATH_UNICODE];
   {
-    ::GetModuleFileNameW(dllModule, pathBuffer, MAX_PATH_UNICODE);
-    wchar_t *temp = wcsrchr(pathBuffer, L'\\');
-    if (temp != NULL) {
-      *temp = L'\0';
-    } else {
-      MessageBox(NULL, TEXT("failed to determine mo path"), TEXT("initialisation failed"), MB_OK);
+    if (::GetModuleFileNameW(dllModule, pathBuffer, MAX_PATH_UNICODE) == 0) {
+      MessageBox(nullptr, TEXT("failed to determine mo path"), TEXT("initialisation failed"), MB_OK);
       return TRUE;
     }
 
+    wchar_t *temp = wcsrchr(pathBuffer, L'\\');
+    if (temp != nullptr) {
+      *temp = L'\0';
+    } else {
+      MessageBox(nullptr, TEXT("failed to determine mo path"), TEXT("initialisation failed"), MB_OK);
+      return TRUE;
+    }
+
+    // initialised once we know where mo is installed
     {
       // if a file called mo_path exists in the same directory as the dll, it overrides the
       // path to the mod organizer
@@ -2725,27 +2797,29 @@ BOOL Init(int logLevel, const wchar_t *profileName)
         hintFile.close();
       }
     }
-    moPath = pathBuffer;
   }
+  std::wstring moPath(pathBuffer);
+  std::wstring moDataPath = getMODataPath(moPath);
 
+  // initialised once we know where mo is installed
   std::wostringstream iniName;
   try {
-    iniName << moPath << "\\modorganizer.ini";
+    iniName << moDataPath << "\\" << AppConfig::iniFileName();
 
     wchar_t pathTemp[MAX_PATH];
     wchar_t gamePath[MAX_PATH];
     ::GetPrivateProfileStringW(L"General", L"gamePath", L"", pathTemp, MAX_PATH, iniName.str().c_str());
     Canonicalize(gamePath, iniDecode(ToString(pathTemp, false).c_str()).c_str());
 
-    if (!GameInfo::init(moPath, gamePath)) {
+    if (!GameInfo::init(moPath, moDataPath, gamePath)) {
       throw std::runtime_error("game not found");
     }
   } catch (const std::exception &e) {
-    MessageBoxA(NULL, e.what(), "initialisation failed", MB_OK);
+    ::MessageBoxA(nullptr, e.what(), "initialisation failed", MB_OK);
     return TRUE;
   }
 
-  std::wstring logFile = GameInfo::instance().getLogDir().append(L"\\").append(AppConfig::logFile());
+  std::wstring logFile = moDataPath + L"\\" + AppConfig::logPath() + L"\\" + AppConfig::logFileName();
 #ifdef UNICODE
   Logger::Init(logFile.c_str(), logLevel);
 #else
@@ -2758,7 +2832,11 @@ BOOL Init(int logLevel, const wchar_t *profileName)
   versionInfo.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEX);
   ::GetVersionEx((OSVERSIONINFO*)&versionInfo);
   winXP = (versionInfo.dwMajorVersion == 5) && (versionInfo.dwMinorVersion == 1);
-  Logger::Instance().info("Windows %d.%d (%s)", versionInfo.dwMajorVersion, versionInfo.dwMinorVersion, versionInfo.wProductType == VER_NT_WORKSTATION ? "workstation" : "server");
+  Logger::Instance().info("Windows %d.%d (%s)",
+                          versionInfo.dwMajorVersion,
+                          versionInfo.dwMinorVersion,
+                          versionInfo.wProductType == VER_NT_WORKSTATION ? "workstation"
+                                                                         : "server");
   ::GetModuleFileNameW(dllModule, pathBuffer, MAX_PATH_UNICODE);
   VS_FIXEDFILEINFO version = GetFileVersion(pathBuffer);
   Logger::Instance().info("hook.dll v%d.%d.%d",
@@ -2767,11 +2845,16 @@ BOOL Init(int logLevel, const wchar_t *profileName)
                           version.dwFileVersionLS >> 16);
 
   Logger::Instance().info("Code page: %ld", GetACP());
+
   wchar_t filename[MAX_PATH];
-  ::GetModuleFileNameW(NULL, filename, MAX_PATH);
+  ::GetModuleFileNameW(nullptr, filename, MAX_PATH);
   Logger::Instance().info("injecting to %ls", filename);
 
-  if (!SetUp(iniName.str(), profileName)) {
+  LPCWSTR baseName = ::GetBaseName(filename);
+
+  bool fallout = StartsWith(baseName, L"fallout");
+
+  if (!SetUp(iniName.str(), profileName, moPath, moDataPath)) {
     Logger::Instance().error("failed to set up");
     return FALSE;
   }
@@ -2784,11 +2867,10 @@ BOOL Init(int logLevel, const wchar_t *profileName)
     }
   }
 
-  if (!SetUpBSAMap()) {
+  if (!SetUpBSAMap(fallout)) {
     Logger::Instance().error("failed to set up list of bsas");
     return FALSE;
   }
-
   SetUpBlacklist();
 
   {
@@ -2804,6 +2886,7 @@ BOOL Init(int logLevel, const wchar_t *profileName)
   }
 
   Logger::Instance().info("injection done");
+
   return TRUE;
 }
 
@@ -2822,14 +2905,14 @@ BOOL APIENTRY DllMain(HMODULE module,
       //TProfile::displayProfile();
 
       delete modInfo;
-      modInfo = NULL;
+      modInfo = nullptr;
     } break;
     case DLL_THREAD_ATTACH: {
       tlsData = ::InitTLS();
     } break;
     case DLL_THREAD_DETACH: {
       tlsData = ::TlsGetValue(tlsIndex);
-      if (tlsData != NULL) {
+      if (tlsData != nullptr) {
         ::LocalFree((HLOCAL)tlsData);
       }
     } break;

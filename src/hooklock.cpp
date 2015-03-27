@@ -25,7 +25,7 @@ DWORD WINAPI GetTLS()
   DWORD *data;
 
   tlsData = ::TlsGetValue(s_TlsCleanup.index());
-  if (tlsData != NULL) {
+  if (tlsData != nullptr) {
     data = (DWORD*)tlsData;
     return *data;
   } else {
@@ -41,10 +41,10 @@ void WINAPI StoreTLS(DWORD value)
   DWORD *data;
 
   tlsData = ::TlsGetValue(s_TlsCleanup.index());
-  if (tlsData == NULL) {
+  if (tlsData == nullptr) {
     // this can happen for threads started before this dll was loaded
     tlsData = InitTLS();
-    if (tlsData == NULL) {
+    if (tlsData == nullptr) {
       Logger::Instance().error("failed to store tls data");
       return;
     }
@@ -59,7 +59,7 @@ void WINAPI StoreTLS(DWORD value)
 LPVOID InitTLS()
 {
   LPVOID tlsData = (LPVOID)::LocalAlloc(LPTR, 256);
-  if (tlsData != NULL) {
+  if (tlsData != nullptr) {
     ::TlsSetValue(s_TlsCleanup.index(), tlsData);
   } else {
     Logger::Instance().error("failed to init tls");

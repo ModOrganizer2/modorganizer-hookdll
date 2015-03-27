@@ -36,7 +36,7 @@ class ModInfo {
 
 public:
 
-  ModInfo(const std::wstring &profileName, const std::wstring &modDirectory, bool enableHiding);
+  ModInfo(const std::wstring &profileName, bool enableHiding, const std::wstring &moPath, const std::wstring &moDataPath);
   ~ModInfo();
 
   /**
@@ -80,14 +80,19 @@ public:
   const std::string &getTweakedIniA() const;
   const std::wstring &getTweakedIniW() const;
 
-  std::string getRerouteOpenExisting(LPCSTR originalName, bool preferOriginal = false, bool *rerouted = NULL, int *originID = NULL);
-  std::wstring getRerouteOpenExisting(LPCWSTR originalName, bool preferOriginal = false, bool *rerouted = NULL, int *originID = NULL);
+  std::string getRerouteOpenExisting(LPCSTR originalName, bool preferOriginal = false, bool *rerouted = nullptr, int *originID = nullptr);
+  std::wstring getRerouteOpenExisting(LPCWSTR originalName, bool preferOriginal = false, bool *rerouted = nullptr, int *originID = nullptr);
   std::wstring getPath(LPCWSTR originalName, size_t offset, int &origin);
 
   const std::string &getDataPathA() const { return m_DataPathAbsoluteA; }
   const std::wstring &getDataPathW() const { return m_DataPathAbsoluteW; }
 
   const std::wstring &getModPathW() const { return m_ModsPath; }
+
+  const std::wstring &getMOPath() const { return m_MOPathW; }
+  const std::wstring &getMODataPath() const { return m_MODataPathW; }
+
+  const std::wstring &getOverwritePath() const { return m_OverwritePathW; }
 
   void dumpDirectoryStructure(const MOShared::DirectoryEntry *directory, int indent);
 
@@ -99,7 +104,7 @@ public:
 
   std::wstring getRemovedLocation(const std::wstring &fileName);
 
-  std::wstring reverseReroute(const std::wstring &path, bool *rerouted = NULL);
+  std::wstring reverseReroute(const std::wstring &path, bool *rerouted = nullptr);
 
   const std::vector<std::wstring> &modNames() const { return m_ModList; }
 
@@ -133,6 +138,8 @@ private:
 
   void addRemoval(const std::wstring &fileName, int origin);
 
+  void setMOPath(const std::wstring &moPath);
+
 private:
 
   struct RemovalInfo {
@@ -158,6 +165,11 @@ private:
   std::wstring m_DataPathAbsoluteW;
 
   std::wstring m_DataPathAbsoluteAlternativeW;
+
+  std::wstring m_MOPathW;
+  std::wstring m_MODataPathW;
+
+  std::wstring m_OverwritePathW;
 
   std::vector<std::wstring> m_ModList;
   std::set<int> m_ModAccess;
