@@ -206,15 +206,16 @@ extern GetModuleFileNameA_type GetModuleFileNameA_reroute;
 typedef struct _IO_STATUS_BLOCK IO_STATUS_BLOCK;
 
 typedef struct _IO_STATUS_BLOCK * PIO_STATUS_BLOCK;
-typedef VOID(NTAPI * 	PIO_APC_ROUTINE )(__in PVOID ApcContext, __in PIO_STATUS_BLOCK IoStatusBlock, __in ULONG Reserved);
+typedef VOID(NTAPI * PIO_APC_ROUTINE)(PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, ULONG Reserved);
 typedef enum _FILE_INFORMATION_CLASS FILE_INFORMATION_CLASS;
 
+#ifdef _MSC_VER
 typedef struct _UNICODE_STRING {
   USHORT Length;
   USHORT MaximumLength;
   PWSTR  Buffer;
 } UNICODE_STRING, *PUNICODE_STRING;
-
+#endif
 
 typedef NTSTATUS (WINAPI *NtQueryDirectoryFile_type)(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
                   PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
@@ -222,4 +223,3 @@ typedef NTSTATUS (WINAPI *NtQueryDirectoryFile_type)(HANDLE FileHandle, HANDLE E
                   PUNICODE_STRING FileName, BOOLEAN RestartScan);
 extern NtQueryDirectoryFile_type NtQueryDirectoryFile_reroute;
 
-//typedef BOOL (WINAPI *BackupRead_type)(HANDLE, LPBYTE, DWORD, LPDWORD, BOOL, BOOL, LPVOID);

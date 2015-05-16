@@ -81,7 +81,7 @@ LPVOID MyGetProcAddress(HMODULE module, LPCSTR functionName)
 ApiHook::ApiHook(LPCTSTR moduleName,
                  LPCSTR functionName,
                  LPVOID replacement)
-  : _reroute(0), _moduleName(moduleName), _functionName(functionName), _bytesMoved(0), _installed(false)
+  : _installed(false), _reroute(0), _moduleName(moduleName), _functionName(functionName), _bytesMoved(0)
 {
   HMODULE mh = ::GetModuleHandle(moduleName);
   if (mh != nullptr) {

@@ -10,6 +10,8 @@ TARGET = hook
 
 TEMPLATE = lib
 
+CONFIG += c++11
+
 #DEFINES += HOOKDLL_LIBRARY
 
 !include(../LocalPaths.pri) {
@@ -58,9 +60,10 @@ CONFIG(debug, debug|release) {
     $$OUT_PWD/../bsatk/debug/bsatk.lib
 } else {
   LIBS += -L$$OUT_PWD/../shared/release -L$$OUT_PWD/../bsatk/release
-  QMAKE_CXXFLAGS += /GL /GS-
-  QMAKE_LFLAGS += /DEBUG /INCREMENTAL:NO /LTCG /OPT:REF /OPT:ICF
-  PRE_TARGETDEPS += $$OUT_PWD/../shared/release/mo_shared.lib \
+  #msvc:QMAKE_CXXFLAGS += /GL /GS-
+  msvc:QMAKE_CXXFLAGS += /GL /GS /RTC1
+  msvc:QMAKE_LFLAGS += /DEBUG /INCREMENTAL:NO /LTCG /OPT:REF /OPT:ICF
+  msvc:PRE_TARGETDEPS += $$OUT_PWD/../shared/release/mo_shared.lib \
     $$OUT_PWD/../bsatk/release/bsatk.lib
 
 }
@@ -85,6 +88,8 @@ DEFINES += \
 QMAKE_CFLAGS_WARN_ON -= -W3
 QMAKE_CFLAGS_WARN_ON += -W4
 
+gcc:QMAKE_CXXFLAGS += -Wno-unknown-pragmas -march=i686 -fno-tree-vectorize
+
 #QMAKE_CXXFLAGS += -GS -RTCs
 
 BASEDIR = $$PWD
@@ -93,8 +98,10 @@ BASEDIR ~= s,/,$$QMAKE_DIR_SEP,g
 LIBS += -lmo_shared -lkernel32 -luser32 -lshell32 -ladvapi32 -lshlwapi -lVersion -lbsatk
 LIBS += -L"$${ZLIBPATH}/build" -lzlibstatic -L"$${BOOSTPATH}/stage/lib"
 
-QMAKE_POST_LINK += xcopy /y /I $$quote($$SRCDIR\\hook*.dll) $$quote($$DSTDIR) $$escape_expand(\\n)
-QMAKE_POST_LINK += xcopy /y /I $$quote($$SRCDIR\\hook*.pdb) $$quote($$DSTDIR) $$escape_expand(\\n)
+gcc:LIBS += -lpsapi -lboost_system-mgw49-mt-1_58 -lboost_thread-mgw49-mt-1_58
+
+QMAKE_POST_LINK += xcopy /y /I $$quote($$SRCDIR\\hook*.dll) $$quote($$DSTDIR) $$escape_expand(\\n\\t)
+QMAKE_POST_LINK += xcopy /y /I $$quote($$SRCDIR\\hook*.pdb) $$quote($$DSTDIR) $$escape_expand(\\n\\t)
 QMAKE_POST_LINK += xcopy /y /I $$quote($$BASEDIR\\process_blacklist*.txt) $$quote($$DSTDIR) $$escape_expand(\\n)
 
 OTHER_FILES +=\

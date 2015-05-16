@@ -159,7 +159,7 @@ ModInfo::ModInfo(const std::wstring &profileName, bool enableHiding, const std::
 
   ::CloseHandle(dataDir);
 
-  std::fstream file(m_ModListPath.c_str());
+  std::fstream file(ToString(m_ModListPath, false).c_str());
   if (!file.is_open()) {
     Logger::Instance().error("failed to read \"%ls\": %s", m_ModListPath.c_str(), strerror(errno));
     return;
@@ -290,8 +290,11 @@ bool ModInfo::detectOverwriteChange()
       FilesOrigin &origin = m_DirectoryStructure.getOriginByID(originId);
       time_t before = time(nullptr);
       {
-        HookLock lock(0xFFFFFFFF); // addFromOrigin uses FindFirstFileEx, rerouting that could be disastrous
-        m_DirectoryStructure.addFromOrigin(origin.getName(), origin.getPath(), origin.getPriority());
+        // addFromOrigin uses FindFirstFileEx, rerouting that could be disastrous
+        HookLock lock(0xFFFFFFFF);
+        m_DirectoryStructure.addFromOrigin(origin.getName(),
+                                           origin.getPath(),
+                                           origin.getPriority());
       }
       origin.enable(false, before);
     } catch (const std::exception &e) {
@@ -499,9 +502,7 @@ void ModInfo::addModFile(LPCWSTR originName, const std::wstring &fileName)
   while ((fileName[offset] == '\\') || (fileName[offset] == '/')) {
     ++offset;
   }
-#ifdef DEBUG_LOG
   LOGDEBUG("add mod file %ls (%ls)", fileName.c_str(), fileName.substr(offset).c_str());
-#endif // DEBUG_LOG
   SYSTEMTIME now;
   GetSystemTime(&now);
   FILETIME time;
@@ -588,7 +589,7 @@ std::wstring ModInfo::getCurrentDirectory()
 }
 
 
-void ModInfo::addSearchResult(SearchBuffer& searchBuffer, LPCWSTR directory, WIN32_FIND_DATAW& searchData)
+void ModInfo::addSearchResult(SearchBuffer &searchBuffer, LPCWSTR directory, WIN32_FIND_DATAW &searchData)
 {
   WCHAR buffer[MAX_PATH];
   if (directory[0] != L'\0') {

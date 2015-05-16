@@ -3,6 +3,7 @@
 
 
 #include <ctime>
+#include <cfloat>
 #include <map>
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
@@ -84,7 +85,11 @@ static const char *s_LastFunction = "";
 //#define PROFILEN(name) TProfile name ## prof(#name);
 //#define PROFILE() LOGDEBUG("%s", __FUNCSIG__); s_LastFunction = __FUNCSIG__
 //#define PROFILE()
+#ifdef _MSC_VER
 #define PROFILE() s_LastFunction = __FUNCSIG__
+#else
+#define PROFILE() s_LastFunction = __PRETTY_FUNCTION__
+#endif
 #define PROFILE_S()
 #define PROFILEN(name)
 

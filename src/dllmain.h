@@ -25,9 +25,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include <windows.h>
 
 #ifdef _WINDLL
-#define DLLEXPORT _declspec(dllexport)
+#define DLLEXPORT __declspec(dllexport)
 #else
-#define DLLEXPORT _declspec(dllimport)
+#define DLLEXPORT __declspec(dllimport)
 #endif
 
 extern "C" DLLEXPORT BOOL __cdecl Init(int logLevel, const wchar_t* profileName);

@@ -65,8 +65,8 @@ public:
 
 	BOOL TwoByteOp() const throw();
 
-  BYTE GetReg1() const throw();
-  BYTE GetReg2() const throw();
+  BYTE GetReg1() const;
+  BYTE GetReg2() const;
 
 	size_t GetSize() const throw();
 
@@ -76,9 +76,9 @@ public:
 
   BOOL JumpTargets(PBYTE begin, PBYTE end);
 
-	const PBYTE GetDispl() throw();
+  const PBYTE GetDispl() throw();
 
-	const PBYTE GetParam1() throw();
+  const PBYTE GetParam1() throw();
 
   PBYTE GetAbsoluteDestination();
 

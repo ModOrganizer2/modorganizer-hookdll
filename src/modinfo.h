@@ -46,7 +46,7 @@ public:
    **/
   bool setCwd(const std::wstring &currentDirectory);
 
-  inline void checkPathAlternative(LPCWSTR path);
+  void checkPathAlternative(LPCWSTR path);
   void addAlternativePath(const std::wstring &path);
 
   void addModFile(const std::wstring &fileName);

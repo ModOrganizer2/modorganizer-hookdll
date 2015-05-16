@@ -157,7 +157,7 @@ bool winXP = false;
 
 
 #pragma message("the privatestring-hook is not functional with a debug build. should fix that")
-#ifdef DEBUG
+#if defined(DEBUG) || !defined(_MSC_VER)
 enum {
   HOOK_NOTYET,
   HOOK_FAILED,
@@ -848,14 +848,15 @@ static std::wstring GetSectionName(PVOID address)
 }
 
 
-#pragma optimize( "", off )
-
 static const int s_BufferSize = 0x8000;
 static char s_Buffer[s_BufferSize];
 static PBYTE s_ReturnAddress = nullptr;
 
 // this includes a bit of wiggle room, for skyrim we need 42 bytes
 #define FUNCTION_BUFFER_SIZE 64
+
+#ifdef _MSC_VER
+#pragma optimize( "", off )
 
 #define BOOST_PP_LOCAL_LIMITS (0, FUNCTION_BUFFER_SIZE)
 
@@ -950,8 +951,25 @@ __declspec(naked) void returnInstrEDX()
     jmp		[s_ReturnAddress]
   };
 }
-
 #pragma optimize( "", on )
+
+#else
+void replacementFunction() {}
+static char *s_FunctionBuffer = (char*)replacementFunction;
+
+void pushModEAX() {}
+void pushModEBX() {}
+void pushModECX() {}
+void pushModEDX() {}
+void returnInstrEAX() {}
+void returnInstrEBX() {}
+void returnInstrECX() {}
+void returnInstrEDX() {}
+void callInstrMod() {}
+
+
+#endif
+
 
 size_t getSnippetSize(void *function)
 {
@@ -1033,10 +1051,10 @@ static bool identifyAndManipulate(DWORD *pos, DWORD size)
 
   void *function = nullptr;
   switch (disasm.GetReg2()) {
-    case 0: function = pushModEAX; break;
-    case 1: function = pushModECX; break;
-    case 2: function = pushModEDX; break;
-    case 3: function = pushModEBX; break;
+    case 0: function = reinterpret_cast<void*>(pushModEAX); break;
+    case 1: function = reinterpret_cast<void*>(pushModECX); break;
+    case 2: function = reinterpret_cast<void*>(pushModEDX); break;
+    case 3: function = reinterpret_cast<void*>(pushModEBX); break;
     default: return false;
   }
 
@@ -1065,11 +1083,11 @@ static bool identifyAndManipulate(DWORD *pos, DWORD size)
   }
 
   { // copy call instruction to target function
-    size_t funcSize = getSnippetSize(callInstrMod);
+    size_t funcSize = getSnippetSize(reinterpret_cast<void*>(callInstrMod));
     if (tPtr + funcSize >= functionEnd) {
       return false;
     }
-    memcpy(tPtr, callInstrMod, funcSize);
+    memcpy(tPtr, reinterpret_cast<void*>(callInstrMod), funcSize);
     tPtr += funcSize;
     sPtr = disasm.GetNextCommand();
   }
@@ -1087,10 +1105,10 @@ static bool identifyAndManipulate(DWORD *pos, DWORD size)
   }
 
   switch (resultRegister) {
-    case REG_EAX: function = returnInstrEAX; break;
-    case REG_EBX: function = returnInstrEBX; break;
-    case REG_ECX: function = returnInstrECX; break;
-    case REG_EDX: function = returnInstrEDX; break;
+    case REG_EAX: function = reinterpret_cast<void*>(returnInstrEAX); break;
+    case REG_EBX: function = reinterpret_cast<void*>(returnInstrEBX); break;
+    case REG_ECX: function = reinterpret_cast<void*>(returnInstrECX); break;
+    case REG_EDX: function = reinterpret_cast<void*>(returnInstrEDX); break;
   }
 
   size_t functionSize = FuncDisasm(reinterpret_cast<PBYTE>(function)).GetSize();
@@ -2016,7 +2034,7 @@ DWORD WINAPI GetModuleFileNameA_rep(HMODULE hModule, LPSTR lpFilename, DWORD nSi
   return origSize;
 }
 
-
+#ifdef _MSC_VER
 typedef struct _IO_STATUS_BLOCK {
     union {
         NTSTATUS Status;
@@ -2112,6 +2130,8 @@ typedef struct _FILE_NAMES_INFORMATION {
     ULONG FileNameLength;
     WCHAR FileName[1];
 } FILE_NAMES_INFORMATION, *PFILE_NAMES_INFORMATION;
+#endif
+
 
 typedef struct _FILE_OBJECTID_INFORMATION {
   LONGLONG FileReference;
@@ -2136,7 +2156,7 @@ typedef struct _FILE_REPARSE_POINT_INFORMATION {
 #define STATUS_NO_MORE_FILES ((NTSTATUS)0x80000006L)
 #define STATUS_NO_SUCH_FILE ((NTSTATUS)0xC000000FL)
 
-
+#ifdef _MSC_VER
 enum _MY_FILE_INFORMATION_CLASS {
     FileDirectoryInformation        = 1,
     FileFullDirectoryInformation    = 2,
@@ -2147,6 +2167,7 @@ enum _MY_FILE_INFORMATION_CLASS {
     FileIdBothDirectoryInformation  = 37,
     FileIdFullDirectoryInformation  = 38
 };
+#endif
 
 ULONG StructMinSize(FILE_INFORMATION_CLASS infoClass)
 {
@@ -2223,10 +2244,17 @@ NTSTATUS addNtSearchData(const std::wstring &localPath,
 {
   NTSTATUS res = STATUS_NO_SUCH_FILE;
   // try to open the directory handle. If this doesn't work, the mod contains no such directory
-  HANDLE hdl = ::CreateFileW_reroute(localPath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+  HANDLE hdl = ::CreateFileW_reroute(localPath.c_str(),
+                                     GENERIC_READ,
+                                     FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                     nullptr,
+                                     OPEN_EXISTING,
+                                     FILE_FLAG_BACKUP_SEMANTICS,
+                                     nullptr);
   if (hdl != INVALID_HANDLE_VALUE) {
     IO_STATUS_BLOCK status;
-    res = NtQueryDirectoryFile_reroute(hdl, nullptr, nullptr, nullptr, &status, buffer.get(), bufferSize, FileInformationClass, FALSE, FileName, FALSE);
+    res = NtQueryDirectoryFile_reroute(hdl, nullptr, nullptr, nullptr, &status, buffer.get(),
+                                       bufferSize, FileInformationClass, FALSE, FileName, FALSE);
     while ((res == STATUS_SUCCESS) && (status.Information > 0)) {
       uint8_t *pos = buffer.get();
       ULONG totalOffset = 0;
@@ -2251,7 +2279,8 @@ NTSTATUS addNtSearchData(const std::wstring &localPath,
         totalOffset += size;
       }
 
-      res = NtQueryDirectoryFile_reroute(hdl, nullptr, nullptr, nullptr, &status, buffer.get(), bufferSize, FileInformationClass, FALSE, FileName, FALSE);
+      res = NtQueryDirectoryFile_reroute(hdl, nullptr, nullptr, nullptr, &status, buffer.get(),
+                                         bufferSize, FileInformationClass, FALSE, FileName, FALSE);
     }
   }
   return res;
@@ -2566,7 +2595,7 @@ BOOL SetUpBSAMap(bool fallout)
   std::wostringstream archiveFileName;
   archiveFileName << modInfo->getProfilePath() << L"\\archives.txt";
 
-  std::fstream file(archiveFileName.str().c_str());
+  std::fstream file(ToString(archiveFileName.str(), false).c_str());
   if (!file.is_open()) {
     Logger::Instance().error("archive \"%ls\" not found!", archiveFileName.str().c_str());
     return FALSE;
