@@ -22,7 +22,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
-
+#ifndef _MSC_VER
+#include <winternl.h>
+#endif
 
 typedef BOOL (WINAPI *CreateProcessA_type)(LPCSTR, LPSTR, LPSECURITY_ATTRIBUTES, LPSECURITY_ATTRIBUTES, BOOL, DWORD, LPVOID,
                                            LPCSTR, LPSTARTUPINFOA, LPPROCESS_INFORMATION);

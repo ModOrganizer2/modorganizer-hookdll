@@ -270,22 +270,31 @@ bool ModInfo::detectOverwriteChange()
 {
   std::set<int> modifiedOrigins;
 
-  for (size_t i = 0; i < m_UpdateHandles.size(); i += MAXIMUM_WAIT_OBJECTS) {
-    DWORD res = ::WaitForMultipleObjects(std::min<int>(MAXIMUM_WAIT_OBJECTS, m_UpdateHandles.size() - i), m_UpdateHandles.data() + i, FALSE, 0);
-    while ((res != WAIT_TIMEOUT) && (res != WAIT_FAILED)) {
-      size_t offset = res - WAIT_OBJECT_0 + i;
-      if (::FindNextChangeNotification(m_UpdateHandles[offset])) {
-        if (offset < m_UpdateOriginIDs.size()) {
-          modifiedOrigins.insert(offset);
+  HANDLE *handles = m_UpdateHandles.data();
+
+  // do a non-waiting WaitForMultipleObjects for all the update handles. Since there is an upper
+  // limit on how many handles can be waited for at once we do this in batches
+  for (size_t offset = 0; offset < m_UpdateHandles.size(); ) {
+    int handleCount = std::min<int>(MAXIMUM_WAIT_OBJECTS, m_UpdateHandles.size() - offset);
+    DWORD res = ::WaitForMultipleObjects(handleCount, handles + offset, FALSE, 0);
+    if ((res == WAIT_TIMEOUT) || (res == WAIT_FAILED)) {
+      // none of the handles signaled so continue with the next block
+      offset += MAXIMUM_WAIT_OBJECTS;
+    } else {
+      // WFMO only returns one signaled handle so repeat with the same block
+      // note: I understand the documentation such that only the event that triggered the return
+      // was reset so other signaled handlers should remain signaled
+      size_t handleIdx = (res - WAIT_OBJECT_0) + offset;
+      if (::FindNextChangeNotification(m_UpdateHandles[handleIdx])) {
+        if (handleIdx < m_UpdateOriginIDs.size()) {
+          modifiedOrigins.insert(handleIdx);
         }
       }
-
-      res = ::WaitForMultipleObjects(std::min<int>(MAXIMUM_WAIT_OBJECTS, m_UpdateHandles.size() - i), m_UpdateHandles.data() + i, FALSE, 0);
     }
   }
 
-  for (auto iter = modifiedOrigins.begin(); iter != modifiedOrigins.end(); ++iter) {
-    int originId = m_UpdateOriginIDs[*iter];
+  for (int idx : modifiedOrigins) {
+    int originId = m_UpdateOriginIDs[idx];
     try {
       FilesOrigin &origin = m_DirectoryStructure.getOriginByID(originId);
       time_t before = time(nullptr);
@@ -593,7 +602,7 @@ void ModInfo::addSearchResult(SearchBuffer &searchBuffer, LPCWSTR directory, WIN
 {
   WCHAR buffer[MAX_PATH];
   if (directory[0] != L'\0') {
-    _snwprintf(buffer, MAX_PATH, L"%ls\\%ls", directory, searchData.cFileName);
+    _snwprintf_s(buffer, _TRUNCATE, L"%ls\\%ls", directory, searchData.cFileName);
     if (m_HiddenFiles.find(buffer) == m_HiddenFiles.end()) {
       searchBuffer.insert(searchData);
     }
@@ -663,6 +672,9 @@ HANDLE ModInfo::dataSearch(LPCWSTR absoluteFileName,
   // add all elements of the vanilla data-directory
   if (dataHandle != INVALID_HANDLE_VALUE) {
     addSearchResults(searchBuffer, primaryHandle, dataHandle, relativePath, searchData);
+    if (dataHandle != primaryHandle) {
+      FindClose_reroute(dataHandle);
+    }
   }
 
   const DirectoryEntry *searchDirectory = nullptr;
@@ -674,15 +686,21 @@ HANDLE ModInfo::dataSearch(LPCWSTR absoluteFileName,
   }
 
   // add elements from the mod directories
-  for (std::vector<std::wstring>::iterator iter = m_ModList.begin(); iter != m_ModList.end(); ++iter) {
-    if (iter->at(0) == L'*') {
+  for (const std::wstring &name : m_ModList) {
+    if (name.at(0) == L'*') {
       continue;
     }
     std::wostringstream fullPath;
-    fullPath << m_ModsPath << "\\" << *iter << (absoluteFileName + filenameOffset);
-    if ((relativePath[0] != '\0') &&
-        ((searchDirectory == nullptr) ||
-         !searchDirectory->hasContentsFromOrigin(m_DirectoryStructure.getOriginByName(*iter).getID()))) {
+    fullPath << m_ModsPath << "\\" << name << (absoluteFileName + filenameOffset);
+    try {
+      FilesOrigin &origin = m_DirectoryStructure.getOriginByName(name);
+      if ((relativePath[0] != '\0') &&
+          ((searchDirectory == nullptr) ||
+           !searchDirectory->hasContentsFromOrigin(origin.getID()))) {
+        continue;
+      }
+    } catch (const std::out_of_range &e) {
+      Logger::Instance().error("invalid mod name %ls: %s", name.c_str(), e.what());
       continue;
     }
 
@@ -705,6 +723,10 @@ HANDLE ModInfo::dataSearch(LPCWSTR absoluteFileName,
 
     if (dataHandle != INVALID_HANDLE_VALUE) {
       addSearchResults(searchBuffer, primaryHandle, dataHandle, relativePath, searchData);
+      if (primaryHandle != dataHandle) {
+        // close the search handle unless it's the primary handle
+        FindClose_reroute(dataHandle);
+      }
     }
   }
 
@@ -846,8 +868,7 @@ void ModInfo::getFullPathName(LPCWSTR originalName, LPWSTR targetBuffer, size_t 
     WCHAR cwd[MAX_PATH];
     DWORD length = ::GetCurrentDirectoryW_reroute(MAX_PATH, cwd);
     if (StartsWith(originalName, cwd)) {
-      _snwprintf(temp, MAX_PATH - 1, L"%ls\\%ls", m_CurrentDirectory.c_str(), originalName + static_cast<size_t>(length));
-      temp[MAX_PATH - 1] = L'\0';
+      _snwprintf_s(temp, _TRUNCATE, L"%ls\\%ls", m_CurrentDirectory.c_str(), originalName + static_cast<size_t>(length));
     } else {
       ::PathCombineW(temp, m_CurrentDirectory.c_str(), originalName);
     }
@@ -927,6 +948,10 @@ std::wstring ModInfo::getPath(LPCWSTR originalName, size_t offset, int &originId
 {
   detectOverwriteChange();
   bool archive = false;
+  if (wcslen(originalName) < offset) {
+    Logger::Instance().error("invalid offset %d to %ls", offset, originalName);
+    return std::wstring();
+  }
   originId = m_DirectoryStructure.getOrigin(originalName + offset + 1, archive);
   if (archive) {
     return std::wstring();

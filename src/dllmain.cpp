@@ -2190,32 +2190,32 @@ void GetInfoData(LPVOID address, FILE_INFORMATION_CLASS infoClass, ULONG &offset
     case FileBothDirectoryInformation: {
       FILE_BOTH_DIR_INFORMATION *info = reinterpret_cast<FILE_BOTH_DIR_INFORMATION*>(address);
       offset = info->NextEntryOffset;
-      fileName = std::wstring(info->FileName, info->FileNameLength / sizeof(WCHAR));
+      fileName.assign(info->FileName, info->FileNameLength / sizeof(WCHAR));
     } break;
     case FileDirectoryInformation: {
       FILE_DIRECTORY_INFORMATION *info = reinterpret_cast<FILE_DIRECTORY_INFORMATION*>(address);
       offset = info->NextEntryOffset;
-      fileName = std::wstring(info->FileName, info->FileNameLength / sizeof(WCHAR));
+      fileName.assign(info->FileName, info->FileNameLength / sizeof(WCHAR));
     } break;
     case FileNamesInformation: {
       FILE_NAMES_INFORMATION *info = reinterpret_cast<FILE_NAMES_INFORMATION*>(address);
       offset = info->NextEntryOffset;
-      fileName = std::wstring(info->FileName, info->FileNameLength / sizeof(WCHAR));
+      fileName.assign(info->FileName, info->FileNameLength / sizeof(WCHAR));
     } break;
     case FileIdFullDirectoryInformation: {
       FILE_ID_FULL_DIR_INFORMATION *info = reinterpret_cast<FILE_ID_FULL_DIR_INFORMATION*>(address);
       offset = info->NextEntryOffset;
-      fileName = std::wstring(info->FileName, info->FileNameLength / sizeof(WCHAR));
+      fileName.assign(info->FileName, info->FileNameLength / sizeof(WCHAR));
     } break;
     case FileFullDirectoryInformation: {
       FILE_FULL_DIR_INFORMATION *info = reinterpret_cast<FILE_FULL_DIR_INFORMATION*>(address);
       offset = info->NextEntryOffset;
-      fileName = std::wstring(info->FileName, info->FileNameLength / sizeof(WCHAR));
+      fileName.assign(info->FileName, info->FileNameLength / sizeof(WCHAR));
     } break;
     case FileIdBothDirectoryInformation: {
       FILE_ID_BOTH_DIR_INFORMATION *info = reinterpret_cast<FILE_ID_BOTH_DIR_INFORMATION*>(address);
       offset = info->NextEntryOffset;
-      fileName = std::wstring(info->FileName, info->FileNameLength / sizeof(WCHAR));
+      fileName.assign(info->FileName, info->FileNameLength / sizeof(WCHAR));
     } break;
     case FileObjectIdInformation: {
       offset = sizeof(FILE_OBJECTID_INFORMATION);
@@ -2265,9 +2265,7 @@ NTSTATUS addNtSearchData(const std::wstring &localPath,
 
         bool add = !modInfo->isFileHidden(fileName);
         if (fileName.length() > 0) {
-          std::wstring fileNameL = fileName;
-          boost::algorithm::to_lower(fileNameL);
-          auto res = foundFiles.insert(fileNameL);
+          auto res = foundFiles.insert(ToLower(fileName));
           add = res.second;
         }
         ULONG size = offset != 0 ? offset : (status.Information - totalOffset);

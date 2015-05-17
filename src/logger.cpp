@@ -114,8 +114,8 @@ void Logger::wrapUpLog()
       ::GetTimeFormat(LOCALE_USER_DEFAULT, 0, &time, TEXT("HH'_'mm"), localTime, 255);
     }
     else {
-      _sntprintf_s(localDate, 255, TEXT("??"));
-      _sntprintf_s(localTime, 255, TEXT("??"));
+      _sntprintf_s(localDate, _TRUNCATE, TEXT("??"));
+      _sntprintf_s(localTime, _TRUNCATE, TEXT("??"));
     }
 
     std::basic_string<TCHAR> targetName = m_LogPath.substr(0, m_LogPath.length() - 4)
