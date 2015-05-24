@@ -2509,17 +2509,20 @@ std::string FromHex(const char *string)
 std::wstring iniDecode(const char *stringEncoded)
 {
   std::string resultUTF8;
-  int tPos = 0;
+  bool escaped = false;
   for (const char *pntPtr = stringEncoded; *pntPtr != '\0'; ++pntPtr) {
-    if (strncmp(pntPtr, "\\x", 2) == 0) {
+    if (!escaped && (strncmp(pntPtr, "\\x", 2) == 0)) {
       pntPtr += 2;
       int numeric = strtol(pntPtr, nullptr, 16);
       resultUTF8.push_back(static_cast<char>(numeric));
-      ++tPos;
       ++pntPtr;
     } else {
       resultUTF8.push_back(*pntPtr);
-      ++tPos;
+      if (escaped) {
+        escaped = false;
+      } else if (*pntPtr == '\\') {
+        escaped = true;
+      }
     }
   }
   return ToWString(resultUTF8, true);
@@ -2828,6 +2831,13 @@ BOOL Init(int logLevel, const wchar_t *profileName)
   std::wstring moPath(pathBuffer);
   std::wstring moDataPath = getMODataPath(moPath);
 
+  std::wstring logFile = moDataPath + L"\\" + AppConfig::logPath() + L"\\" + AppConfig::logFileName();
+#ifdef UNICODE
+  Logger::Init(logFile.c_str(), logLevel);
+#else
+  Logger::Init(ToString(logFile, false).c_str(), logLevel);
+#endif
+
   // initialised once we know where mo is installed
   std::wostringstream iniName;
   try {
@@ -2845,13 +2855,6 @@ BOOL Init(int logLevel, const wchar_t *profileName)
     ::MessageBoxA(nullptr, e.what(), "initialisation failed", MB_OK);
     return TRUE;
   }
-
-  std::wstring logFile = moDataPath + L"\\" + AppConfig::logPath() + L"\\" + AppConfig::logFileName();
-#ifdef UNICODE
-  Logger::Init(logFile.c_str(), logLevel);
-#else
-  Logger::Init(ToString(logFile, false).c_str(), logLevel);
-#endif
   exceptionHandler = ::AddVectoredExceptionHandler(0, VEHandler);
 
   OSVERSIONINFOEX versionInfo;
