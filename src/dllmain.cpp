@@ -1713,6 +1713,14 @@ BOOL WINAPI CreateHardLinkA_rep(LPCSTR lpFileName, LPCSTR lpExistingFileName,
 DWORD WINAPI GetFullPathNameW_rep(LPCWSTR lpFileName, DWORD nBufferLength, LPWSTR lpBuffer, LPWSTR *lpFilePart)
 {
   PROFILE();
+
+  LPCWSTR searchPath = lpFileName;
+  if ((wcslen(searchPath) > 2)
+      && (searchPath[1] == L':')
+      && (searchPath[2] == L'.')) {
+    searchPath += 2;
+  }
+
   if (modInfo->getCurrentDirectory().length() != 0) {
     WCHAR cwd[MAX_PATH];
     DWORD cwdLength = ::GetCurrentDirectoryW_reroute(MAX_PATH, cwd);
@@ -1730,10 +1738,10 @@ DWORD WINAPI GetFullPathNameW_rep(LPCWSTR lpFileName, DWORD nBufferLength, LPWST
         }
       }
       return count;
-    } else if (::PathIsRelativeW(lpFileName)) {
+    } else if (::PathIsRelativeW(searchPath)) {
       WCHAR temp[MAX_PATH];
 
-      ::PathCombineW(temp, modInfo->getCurrentDirectory().c_str(), lpFileName);
+      ::PathCombineW(temp, modInfo->getCurrentDirectory().c_str(), searchPath);
 
       WCHAR temp2[MAX_PATH];
       size_t count = 0UL;
