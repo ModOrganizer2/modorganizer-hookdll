@@ -1727,17 +1727,22 @@ DWORD WINAPI GetFullPathNameW_rep(LPCWSTR lpFileName, DWORD nBufferLength, LPWST
     if (StartsWith(lpFileName, cwd)) {
       WCHAR temp[MAX_PATH];
       ::PathCombineW(temp, modInfo->getCurrentDirectory().c_str(), lpFileName + static_cast<size_t>(cwdLength) + 1);
-      size_t count = std::min<size_t>(nBufferLength - 1, wcslen(temp));
-      wcsncpy(lpBuffer, temp, count);
-      lpBuffer[count] = L'\0';
-      if (lpFilePart != nullptr) {
-        *lpFilePart = GetBaseName(lpBuffer);
-        if (**lpFilePart == L'\0') {
-          // lpBuffer is a directory
-          *lpFilePart = nullptr;
+      size_t length = wcslen(temp);
+      if ((lpBuffer != nullptr) && (nBufferLength > 0)) {
+        size_t count = std::min<size_t>(nBufferLength - 1, length);
+        wcsncpy(lpBuffer, temp, count);
+        lpBuffer[count] = L'\0';
+        if (lpFilePart != nullptr) {
+          *lpFilePart = GetBaseName(lpBuffer);
+          if (**lpFilePart == L'\0') {
+            // lpBuffer is a directory
+            *lpFilePart = nullptr;
+          }
         }
+        return count;
+      } else {
+        return length + 1;
       }
-      return count;
     } else if (::PathIsRelativeW(searchPath)) {
       WCHAR temp[MAX_PATH];
 
@@ -1746,19 +1751,31 @@ DWORD WINAPI GetFullPathNameW_rep(LPCWSTR lpFileName, DWORD nBufferLength, LPWST
       WCHAR temp2[MAX_PATH];
       size_t count = 0UL;
       if (::PathCanonicalizeW(temp2, temp)) {
-        count = std::min<size_t>(nBufferLength - 1, wcslen(temp2));
-        wcsncpy(lpBuffer, temp2, count);
+        size_t length = wcslen(temp2);
+        if ((lpBuffer != nullptr) && (nBufferLength > 0)) {
+          count = std::min<size_t>(nBufferLength - 1, length);
+          wcsncpy(lpBuffer, temp2, count);
+        } else {
+          count = length + 1;
+        }
       } else {
         Logger::Instance().error("failed to canonicalize path %ls", temp);
-        count = std::min<size_t>(nBufferLength - 1, wcslen(temp));
-        wcsncpy(lpBuffer, temp, count);
+        size_t length = wcslen(temp);
+        if (nBufferLength > 0) {
+          count = std::min<size_t>(nBufferLength - 1, length);
+          wcsncpy(lpBuffer, temp, count);
+        } else {
+          count = length + 1;
+        }
       }
-      lpBuffer[count] = L'\0';
-      if (lpFilePart != nullptr) {
-        *lpFilePart = GetBaseName(lpBuffer);
-        if (**lpFilePart == L'\0') {
-          // lpBuffer is a directory
-          *lpFilePart = nullptr;
+      if (count < nBufferLength) {
+        lpBuffer[count] = L'\0';
+        if (lpFilePart != nullptr) {
+          *lpFilePart = GetBaseName(lpBuffer);
+          if (**lpFilePart == L'\0') {
+            // lpBuffer is a directory
+            *lpFilePart = nullptr;
+          }
         }
       }
       return count;
