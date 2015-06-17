@@ -83,9 +83,9 @@ static const char *s_LastFunction = "";
 //#define PROFILE() TProfile __FUNCTION__ ## prof(__FUNCSIG__);
 //#define PROFILE_S() TProfile __FUNCTION__ ## prof(__FUNCSIG__);
 //#define PROFILEN(name) TProfile name ## prof(#name);
-//#define PROFILE() LOGDEBUG("%s", __FUNCSIG__); s_LastFunction = __FUNCSIG__
 //#define PROFILE()
 #ifdef _MSC_VER
+//#define PROFILE() LOGDEBUG("%s", __FUNCSIG__); s_LastFunction = __FUNCSIG__
 #define PROFILE() s_LastFunction = __FUNCSIG__
 #else
 #define PROFILE() s_LastFunction = __PRETTY_FUNCTION__
