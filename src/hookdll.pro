@@ -80,7 +80,8 @@ DEFINES += \
     _UNICODE \
     _CRT_SECURE_NO_WARNINGS \
     _WINDLL \
-    DEBUG_LOG
+    DEBUG_LOG \
+    PSAPI_VERSION=1
 
 #QMAKE_CXXFLAGS += /analyze
 
