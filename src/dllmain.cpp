@@ -2873,7 +2873,7 @@ BOOL Init(int logLevel, const wchar_t *profileName)
     ::GetPrivateProfileStringW(L"General", L"gamePath", L"", pathTemp, MAX_PATH, iniName.str().c_str());
     Canonicalize(gamePath, iniDecode(ToString(pathTemp, false).c_str()).c_str());
 
-    if (!GameInfo::init(moPath, moDataPath, gamePath)) {
+    if (!GameInfo::init(moPath, gamePath)) {
       throw std::runtime_error("game not found");
     }
   } catch (const std::exception &e) {
