@@ -28,7 +28,11 @@ SOURCES += \
     disasm.cpp \
     apihook.cpp \
     profile.cpp \
-    hooklock.cpp
+    hooklock.cpp \
+    fallout3info.cpp \
+    falloutnvinfo.cpp \
+    gameinfo.cpp \
+    oblivioninfo.cpp
 
 HEADERS += \
     utility.h \
@@ -41,7 +45,12 @@ HEADERS += \
     disasm.h \
     apihook.h \
     profile.h \
-    hooklock.h
+    hooklock.h \
+    fallout3info.h \
+    falloutnvinfo.h \
+    gameinfo.h \
+    oblivioninfo.h \
+    obse.h
 
 OTHER_FILES += \
     version.rc \
