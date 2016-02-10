@@ -41,7 +41,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include "inject.h"
 #include "profile.h"
 #include "hooklock.h"
-#include <gameinfo.h>
+#include "gameinfo.h"
 #include <util.h>
 #include <appconfig.h>
 #include "obse.h"
